@@ -41,6 +41,8 @@
 //-----------------------------------------------------------------------------
 
 #define VREF                 2200      // ADC Voltage Reference (mV)
+#define VACUUM_MIN           100       // [mBar] disable vacuum pump at this level
+#define VACUUM_MAX           300      // [mBar] enable vacuum pump at this level
 
 //-----------------------------------------------------------------------------
 // Includes
@@ -60,17 +62,18 @@
 unsigned doInit(void);
 void highSide_Init(void);
 int checkBoard(void);
-unsigned getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Switch_B);
+int getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Switch_B);
 int getHighSideSwitchACurrent_mA(void);
 int getHighSideSwitchBCurrent_mA(void);
-unsigned DoMainStartup(void);
-unsigned DoPumpStartup(void);
-unsigned DoRevHeatStartup(void);
-void DoRunMain(void);
-void DoRunPump(void);
-void DoRunRevHeater(void);
+int DoMainStartup(void);
+int DoPumpStartup(void);
+int DoRevHeatStartup(void);
+int DoRunMain(void);
+int DoRunPump(void);
+int DoRunRevHeater(void);
 int getOwnCanNode(void);
-int getAdcReading(int pin);
+int getAdcReading(int pin, int *adc_value);
+int getPressureReading_mbar(int *value);
 
 //-----------------------------------------------------------------------------
 // Defines
@@ -123,15 +126,38 @@ SI_SBIT(A_PORT, SFR_P1, 7);
 SI_SBIT(B_PORT, SFR_P2, 0);
 SI_SBIT(C2D, SFR_P2, 1);
 
+//leads to problems with generic code (highsideSwitch init etc (works with EN_*)
+//#ifndef Board == MAIN
+//SI_SBIT(BenderError, SFR_P1, 7);  //A_Port
+//SI_SBIT(InterlockSig, SFR_P0, 0); //B_Port
+//SI_SBIT(OilPressureWarningLight, SFR_P1, 2);  //EN_A
+//SI_SBIT(InterlockRelais, SFR_P1, 3);  //EN_B
+//#endif
+//
+//#ifndef Board == VACUUM_WATER_PUMP
+//SI_SBIT(Vacum_ADC, SFR_P1, 7);  //A_Port
+//SI_SBIT(VacuumPump, SFR_P1, 2); //EN_A
+//SI_SBIT(WatherPump, SFR_P1, 3); //EN_B
+//#endif
+//
+//#ifndef Board == REVERSE_HEATER
+//SI_SBIT(Rev_GearSelected, SFR_P1, 7);  //A_Port (Gearbox Sensor)
+//SI_SBIT(HeaterMeltFuse, SFR_P2, 0); //B_Port (RevDirSelected)
+//SI_SBIT(Rev_DirectionSelected, SFR_P0, 0); //C_Port
+//SI_SBIT(HeaterRelais, SFR_P1, 2); //EN_A
+//SI_SBIT(ReverseLight, SFR_P1, 3); //EN_B
+//#endif
+
 //-----------------------------------------------------------------------------
 // main() Routine
 //-----------------------------------------------------------------------------
 
 void main (void)
 {
-   SFRPAGE = LEGACY_PAGE;              // Set SFR Page for PCA0MD
 
-   int error = NO_ERROR;
+   int error;
+   error = NO_ERROR;
+   SFRPAGE = LEGACY_PAGE;              // Set SFR Page for PCA0MD
 
    // Init board auxillary's
    CURRENT_STATE = INIT;
@@ -162,7 +188,7 @@ void main (void)
 
 
 
-   while (1)
+   while (1)  //todo: define reasoneable cycling rate
    {
      switch(Board)
      {
@@ -215,11 +241,11 @@ int checkBoard(void)
 
   if(ST_A == LOW)
     {
-      error = HIGH_SIDE_SWITCH_A_ERROR;
+      error = BOARD_HSS_A_ERROR;
     }
   else if(ST_B == LOW)
     {
-      error = HIGH_SIDE_SWITCH_B_ERROR;
+      error = BOARD_HSS_B_ERROR;
     }
   //todo maybe check CAN
   //todo different stuff?
@@ -228,8 +254,10 @@ int checkBoard(void)
 }
 
 // check highside diagnostic's
-unsigned getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Switch_B)
+int getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Switch_B)
 {
+  int adcReading;
+
   Switch_A->current = 0;//I_Sens = 4.35 mA @ I_out = 20A; I_Sens = 1.74 mA @ I_out = 8A; I_Sens = 0.65 mA @ I_out = 3A; I_Sens = 0.217 mA @ I_out = 1A
   Switch_A->voltage = 0;//I_Sens = 2.25 mA @ T = 150°C; I_Sens = 1.52 mA @ T = 85°C; I_Sens = 0.85 mA @ T = 25°C
   Switch_A->temperature = 0;//I_Sens = 2.25 mA @ T = 150°C; I_Sens = 1.52 mA @ T = 85°C; I_Sens = 0.85 mA @ T = 25°C
@@ -246,12 +274,12 @@ unsigned getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData 
   {
     //todo Calculate Value according to I_Sens
       //getAdcReading()
-      Switch_A->current = getAdcReading(P1_0)*CurrentFactor+CurrentOffset;
+      Switch_A->current = getAdcReading(P1_0, &adcReading)*CurrentFactor+CurrentOffset;
   }
   if(EN_B)
   {
       //todo Calculate Value according to I_Sens
-      Switch_B->current = getAdcReading(P1_1)*CurrentFactor+CurrentOffset;
+      Switch_B->current = getAdcReading(P1_1, &adcReading)*CurrentFactor+CurrentOffset;
   }
 
   //Check output Voltage
@@ -259,38 +287,42 @@ unsigned getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData 
   SEL2 = HIGH;
 
   //todo Calculate Value according to I_Sens
-  Switch_A->voltage = getAdcReading(P1_0)*VoltageFactor+VoltageOffset;
-  Switch_B->voltage = getAdcReading(P1_1)*VoltageFactor+VoltageOffset;
+  Switch_A->voltage = getAdcReading(P1_0, &adcReading)*VoltageFactor+VoltageOffset;
+  Switch_B->voltage = getAdcReading(P1_1, &adcReading)*VoltageFactor+VoltageOffset;
 
   //Check Temperature
   SEL1 = HIGH;
   SEL2 = LOW;
 
   //todo Calculate Value according to I_Sens
-  Switch_A->temperature = getAdcReading(P1_0)*TemperatureFactor+TemperatureOffset;
-  Switch_B->temperature = getAdcReading(P1_1)*TemperatureFactor+TemperatureOffset;
+  Switch_A->temperature = getAdcReading(P1_0, &adcReading)*TemperatureFactor+TemperatureOffset;
+  Switch_B->temperature = getAdcReading(P1_1, &adcReading)*TemperatureFactor+TemperatureOffset;
 
   return NO_ERROR;
 }
 
 int getHighSideSwitchACurrent_mA()
 {
+  int adcReading;
+
   DIA_EN = HIGH;
   //Check output Current
   SEL1 = LOW;
   SEL2 = LOW;
 
-  return getAdcReading(P1_0)*CurrentFactor+CurrentOffset;
+  return getAdcReading(P1_0, &adcReading)*CurrentFactor+CurrentOffset;
 }
 
 int getHighSideSwitchBCurrent_mA()
 {
+  int adcReading;
+
   DIA_EN = HIGH;
   //Check output Current
   SEL1 = LOW;
   SEL2 = LOW;
 
-  return getAdcReading(P1_1)*CurrentFactor+CurrentOffset;
+  return getAdcReading(P1_1, &adcReading)*CurrentFactor+CurrentOffset;
 }
 
 //return own CAN node Number
@@ -314,7 +346,7 @@ int getOwnCanNode(void)
 }
 
 //check, enable inverter, battery and bender
-unsigned DoMainStartup(void)
+int DoMainStartup(void)
 {
   int error = NO_ERROR;
 
@@ -329,7 +361,7 @@ unsigned DoMainStartup(void)
   if(C_Port == LOW)
       {
         EN_B = LOW; //disable Interlock Relais (close interlock loop)
-        return INTERLOCK_ERROR; //One of the Battery's is missing -> abord
+        return BOARD_INTERLOCK_ERROR; //One of the Battery's is missing -> abord
       }
 
   //todo(CAN) enable battery's
@@ -340,46 +372,48 @@ unsigned DoMainStartup(void)
 }
 
 //check inverter tempereature, check vacuum sensor
-unsigned DoPumpStartup(void)
+int DoPumpStartup(void)
 {
   int error = NO_ERROR;
   int vacuumLevel = 0;
 
   //get Vacuum Level
-  vacuumLevel = getAdcReading(P1_7)*VacuumFactor+VacuumOffset;
+  error += getPressureReading_mbar(&vacuumLevel);
 
   //enable Vacuum Pump
   EN_A = HIGH;
 
-  Wait_ms((U16) 500);
+//  Wait_ms((U16) 500); todo: does not work
 
   if(getHighSideSwitchACurrent_mA() < 100)  //check if Pump is running
   {
-    error = VACUUM_PUMP_ERROR; //pump should be running, seams not ON
+    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
   }
 
-  Wait_ms((U16) 500);
+  //  Wait_ms((U16) 500); todo: does not work
 
-  if(vacuumLevel+50 >= getAdcReading(P1_7)*VacuumFactor+VacuumOffset) //check if Vacuum is building up
+  error += getPressureReading_mbar(&vacuumLevel);
+
+  if(vacuumLevel+50 >= vacuumLevel) //check if Vacuum is building up
   {
-    if(error == VACUUM_PUMP_ERROR)  // pump is not running, no Vacuum is building up
+    if(error == BOARD_VACUUM_PUMP_ERROR)  // pump is not running, no Vacuum is building up
       {
-        error = VACUUM_ERROR;
+        error = BOARD_VACUUM_PUMP_ERROR;
       }
     else
       {
-        error = VACUUM_SENSOR_ERROR;  // pump is running, but vacuum is not building up
+        error = BOARD_VACUUM_SYSTEM_ERROR;  // pump is running, but vacuum is not building up
       }
     }
 
   //disable Vacuum Pump
   EN_A = LOW;
 
-  Wait_ms((U16) 500);
+  //  Wait_ms((U16) 500); todo: does not work
 
   if(getHighSideSwitchACurrent_mA() > 100)  //check if Pump is OFF
   {
-    error = VACUUM_PUMP_ERROR; //pump should be running, seams not ON
+    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
   }
 
 
@@ -393,7 +427,7 @@ unsigned DoPumpStartup(void)
 }
 
 //check heater melting fuse
-unsigned DoRevHeatStartup(void)
+int DoRevHeatStartup(void)
 {
   int error = NO_ERROR;
 
@@ -401,72 +435,146 @@ unsigned DoRevHeatStartup(void)
 
   if(B_PORT == HIGH)  //check Heater Melting Fuse
     {
-      error = HEATER_ERROR;
+      error = HEATER_FUSE_ERROR;
     }
 
   return error;}
 
-void DoRunMain(void)
+int DoRunMain(void)
 {
+  unsigned error = NO_ERROR;
 
+  //todo(CAN): check invertor state
+  //todo(CAN): battery state invertor state
+
+
+  // check GPIO state's
+  //Bender Error
+  if(A_PORT == HIGH)  //todo check if HIGH signals error alternative: check by todo(CAN)
+    {
+      error += BENDER_ERROR_ERROR;
+    }
+  //pump's Signal
+  if(B_PORT != HIGH)
+    {
+      error += BOARD_PUMPS_EROR;
+    }
+  //Interlock Signal
+  if(C_Port != HIGH)
+    {
+      error += BOARD_INTERLOCK_ERROR + ERROR_LEVEL_FATAL;
+    }
+
+
+ return error;
 }
-void DoRunPump(void)
+int DoRunPump(void)
 {
+  int error = NO_ERROR;
+  int vacuumLevel;
 
+  error += getPressureReading_mbar(&vacuumLevel);
+
+  if(error != NO_ERROR)
+    {
+      //todo: refine error handling (maybe pump should turn on)
+      return error;
+    }
+
+  if(vacuumLevel > VACUUM_MAX)
+    {
+      EN_A = HIGH;
+    }
+
+  if (vacuumLevel < VACUUM_MIN)
+    {
+      EN_B = LOW;
+    }
+
+  //todo(CAN) get inverter temperature
+  {
+
+  }
+  // check vacuum level -> enable vacuum pump if necessery
+  // check inverter temperature -> enable wather pump if necessery
+
+
+  return error;
 }
-void DoRunRevHeater(void)
+int DoRunRevHeater(void)
 {
+  int error = NO_ERROR;
 
+  // do reverse logic
+  // check melting fuse
+
+  return error;
 }
 
 //returns the DAC0 reading of the given pin(HEX)
-int getAdcReading(int pin)
+int getAdcReading(int pin, int *value)
 {
-  int adcReading = 0;
+  //todo: uint*_t is not recognized
 
-  ADC0MX = pin;
+//  int adcReading = 0;
+//
+//  ADC0MX = pin;
+//
+//  //---------------------------
+//  uint16_t i;                              // Sample counter
+//  uint32_t accumulator = 0L;               // Where the ADC samples are integrated
+//  uint16_t currval;                        // Current value of ADC0
+//
+//  uint8_t SFRPAGE_save = SFRPAGE;
+//  SFRPAGE = LEGACY_PAGE;
+//
+//  ADC0CN_ADINT = 0;                         // Clear end-of-conversion indicator
+//  ADC0CN_ADBUSY = 1;                        // Initiate conversion
+//
+//  // Accumulate 4096 samples and average to get a 16-bit result
+//  // 4096 samples = 12 bits; 12 extra bits + 12 samples per bit = 24 bits
+//  // Shift by 8 bits to calculate a 16-bit result.
+//
+//  i = 0;
+//  do
+//  {
+//     while (!ADC0CN_ADINT);                 // Wait for conversion to complete
+//     ADC0CN_ADINT = 0;                      // Clear end-of-conversion indicator
+//
+//     currval = ADC0;                  // Store latest ADC conversion
+//     ADC0CN_ADBUSY = 1;                     // Initiate conversion
+//     accumulator += currval;          // Accumulate
+//     i++;                             // Update counter
+//  } while (i != 4096);
+//
+//  accumulator = accumulator >> 8;     // 8-bit shift to go from 24 to 16 bits
+//
+//  *value = (uint16_t) (((uint32_t) accumulator * (uint32_t) VREF) / (uint32_t) 65536);
+//
+//  // Note that the numbers were rounded when equation was solved.
+//  // This rounding does introduce error to the calculation, but it is
+//  // negligible when looking for an estimated temperature.
+//
+//  SFRPAGE = SFRPAGE_save;
 
-  //---------------------------
-  uint16_t i;                              // Sample counter
-  uint32_t accumulator = 0L;               // Where the ADC samples are integrated
-  uint16_t currval;                        // Current value of ADC0
-
-  uint8_t SFRPAGE_save = SFRPAGE;
-  SFRPAGE = LEGACY_PAGE;
-
-  ADC0CN_ADINT = 0;                         // Clear end-of-conversion indicator
-  ADC0CN_ADBUSY = 1;                        // Initiate conversion
-
-  // Accumulate 4096 samples and average to get a 16-bit result
-  // 4096 samples = 12 bits; 12 extra bits + 12 samples per bit = 24 bits
-  // Shift by 8 bits to calculate a 16-bit result.
-
-  i = 0;
-  do
-  {
-     while (!ADC0CN_ADINT);                 // Wait for conversion to complete
-     ADC0CN_ADINT = 0;                      // Clear end-of-conversion indicator
-
-     currval = ADC0;                  // Store latest ADC conversion
-     ADC0CN_ADBUSY = 1;                     // Initiate conversion
-     accumulator += currval;          // Accumulate
-     i++;                             // Update counter
-  } while (i != 4096);
-
-  accumulator = accumulator >> 8;     // 8-bit shift to go from 24 to 16 bits
-
-  adcReading = (uint16_t) (((uint32_t) accumulator * (uint32_t) VREF) / (uint32_t) 65536);
-
-  // Note that the numbers were rounded when equation was solved.
-  // This rounding does introduce error to the calculation, but it is
-  // negligible when looking for an estimated temperature.
-
-  SFRPAGE = SFRPAGE_save;
-
-  return adcReading;
+  return NO_ERROR;
 
 }
 //-----------------------------------------------------------------------------
+
+// calculate and return the pressure measured by the pressure sensor
+int getPressureReading_mbar(int *value)
+{
+  double vacuumSensorReading = 0;
+  int error = NO_ERROR;
+
+  //Vacuum Sensor 0kPa @ 0.5V, -100kPa @ 4.5V
+  error += getAdcReading(P1_7, &vacuumSensorReading)*VacuumFactor+VacuumOffset;
+
+  //calculate pressure [mBar], based on 101kPa (athmosperic pressure @ 0müm)
+  *value = 101 - (int)vacuumSensorReading;
+  return error;
+}
 // Initialization Subroutines
 //-----------------------------------------------------------------------------
 
