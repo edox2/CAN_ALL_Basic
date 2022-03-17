@@ -39,7 +39,8 @@ typedef enum
 typedef enum
 {
    INIT,                  // init pins, ports, clk's, etc...
-   STARTUP,               // Test Auxillary's (CAN,
+   WAIT,                  // Wait for ignition level change
+   STARTUP,               // Test Auxillary's (CAN, highsideswitch,...)
    RUN,                   // check inverter, close inverter Relais, check interlock loop, start battery's, check inverter, check Bender
                           // all is good (Interlock closed, battery's ON, Inverter OK), go to error state if something happens
    ERROR,                 // check error, decide how to proceed
