@@ -90,21 +90,25 @@ void WDT_Init (void)
 //-----------------------------------------------------------------------------
 void SYSCLK_Init (void)
 {
-    U16 i = 0;
-
-    FLSCL     = 0x90;                  // Set Flash read timing for 50 MHz
-
-    OSCICN    = 0x83;                  // Enable intosc for div 1 mode
-
-    CLKMUL    = 0x80;                  // Enable clkmul
-
-    for (i = 0; i < 20; i++);          // Wait at least 5us for init
-
-    CLKMUL    |= 0xC0;
-
-    while ((CLKMUL & 0x20) == 0);
-
-    CLKSEL    = 0x03;                  // enable CLKMUL as sysclk
+//    U16 i = 0;
+//
+//    FLSCL     = 0x90;                  // Set Flash read timing for 50 MHz
+//
+//    OSCICN    = 0x83;                  // Enable intosc for div 1 mode
+//
+//    CLKMUL    = 0x80;                  // Enable clkmul
+//
+//    for (i = 0; i < 20; i++);          // Wait at least 5us for init
+//
+//    CLKMUL    |= 0xC0;
+//
+//    while ((CLKMUL & 0x20) == 0);
+//
+//    CLKSEL    = 0x03;                  // enable CLKMUL as sysclk
+  //internal osc @ 24MHz
+  SFRPAGE   = CONFIG_PAGE;
+  OSCICN    = 0xC7;
+//  SFRPAGE   = ACTIVE_PAGE;
 }
 
 
@@ -135,7 +139,15 @@ void PORT_Init (void)
 
   uint8_t SFRPAGE_save = SFRPAGE;
   SFRPAGE = CONFIG_PAGE;
+//  //todo debug config (ADC)
+//  SFRPAGE   = CONFIG_PAGE;
+//  P0MDIN    = 0xFE;
+//  P1MDIN    = 0x7C;
+//  P2MDIN    = 0xFE;
+//  XBR0      = 0x03;
+//  XBR2      = 0x40;
 
+  //todo original config
   SFRPAGE   = CONFIG_PAGE;
   P1MDIN    = 0xFC;
   P0MDOUT   = 0x0E;

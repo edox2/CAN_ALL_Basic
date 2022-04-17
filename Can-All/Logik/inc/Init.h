@@ -22,15 +22,15 @@
 // Board Types
 typedef enum
 {
-   MAIN = 0,              //Main CAN communicator (Battery/inverter),
+   MAIN,              //Main CAN communicator (Battery/inverter),
                           //IN: BenderError, interlock Signal, Pump OK
                           //OUT: OilPressure(Dash Light for Bender error), interlock Relais (open/close interlock loop)
 
-   VACUUM_WATER_PUMP = 1, //water and Vacuum Pump controller, CAN inverter temperature
+   VACUUM_WATER_PUMP, //water and Vacuum Pump controller, CAN inverter temperature
                           //IN: Vacuum Sensor (ADC)
                           //OUT: water Pump (depending on inverter Temp. (CAN)), VakuumPump (depending on Vacuum(Schmitt-trigger), Pump OK
 
-   REVERSE_HEATER = 2,    //Heater, Reverse Light controller
+   REVERSE_HEATER,    //Heater, Reverse Light controller
                           //IN: Reverse Gear Selector (FNR), Reverse Gear Sensor (gearbox), Heater Melting Fuse (internal pull UP)
                           //OUT: Heater Relais, Reverse Light
 }BoardType;

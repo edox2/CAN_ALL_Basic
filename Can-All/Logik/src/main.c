@@ -40,24 +40,33 @@
 // Global CONSTANTS
 //-----------------------------------------------------------------------------
 
-#define VREF                      2200      // ADC Voltage Reference (mV)
-#define VACUUM_MIN                100       // [mBar] disable vacuum pump at this level todo: defnie more accurate
-#define VACUUM_MAX                300      // [mBar] enable vacuum pump at this level todo: defnie more accurate
-#define INVERTER_TEMPERATURE_MAX  95        // [°C] Maximal inverter Temperature -> shut down todo: defnie more accurate
-#define INVERTER_TEMPERATURE_WARN 65        // [°C] Temperature to start cooling todo: defnie more accurate
-#define INVERTER_TEMPERATURE_MIN  45        // [°C] Temperature to stop cooling todo: defnie more accurate
-
+#define VACUUM_MIN                100   // [mBar] disable vacuum pump at this level todo: defnie more accurate
+#define VACUUM_MAX                300   // [mBar] enable vacuum pump at this level todo: defnie more accurate
+#define INVERTER_TEMPERATURE_MAX  95    // [°C] Maximal inverter Temperature -> shut down todo: defnie more accurate
+#define INVERTER_TEMPERATURE_WARN 65    // [°C] Temperature to start cooling todo: defnie more accurate
+#define INVERTER_TEMPERATURE_MIN  45    // [°C] Temperature to stop cooling todo: defnie more accurate
+#define VREF                      2200  // [mV] ADC Voltage Reference
+#define HSS_TEMPERATURE_FACTOR    0.012 // [°C/mV]
+#define HSS_TEMPERATURE_OFFSET    -500  // [mV] 0°C @ 0.5V @ V_out
+#define HSS_CURRENT_FACTOR        0.225 // [A/mV]
+#define HSS_CURRENT_OFFSET        0     // [mV]
+#define HSS_VOLTAGE_FACTOR        0.085 // [V/mV]
+#define HSS_VOLTAGE_OFFSET        0     // [mV]
+#define VACUUM_FACTOR             0.25  // [mBar/mV]
+#define VACUUM_OFFSET             -500  // [mV] 0hpa @ 0.5V V_out
 //-----------------------------------------------------------------------------
 // Includes
 //-----------------------------------------------------------------------------
 
 #include <SI_C8051F550_Defs.h>
 #include <SI_C8051F550_Register_Enums.h>
+#include <stdint.h>
 #include "../inc/Init.h"
 #include "../inc/HighSideSwitch.h"
 #include "../inc/compiler_defs.h"
 #include "../inc/Common.h"
 #include "../inc/Errors.h"
+#include "../inc/Timing.h"
 
 //-----------------------------------------------------------------------------
 // Function Prototypes
@@ -68,7 +77,7 @@ long checkBoard(void);
 long getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Switch_B);
 int getHighSideSwitchACurrent_mA(void);
 int getHighSideSwitchBCurrent_mA(void);
-void enabableHighSideSwitchDiagnostics(void);
+void SetHSSDiagnostics(void);
 long DoMainStartup(void);
 long DoPumpStartup(void);
 long DoRevHeatStartup(void);
@@ -85,16 +94,9 @@ void DoRevHeaterError(void);
 //-----------------------------------------------------------------------------
 // Defines
 //-----------------------------------------------------------------------------
-BoardType Board = MAIN;
+BoardType Board = VACUUM_WATER_PUMP;
 StateMachine CURRENT_STATE = ERROR;
-int TemperatureFactor = 1;  //todo figure out factor
-int TemperatureOffset = 0;
-int CurrentFactor = 1;  //todo figure out factor
-int CurrentOffset = 0;
-int VoltageFactor = 1;  //todo figure out factor
-int VoltageOffset = 0;
-int VacuumFactor = 1;   //todo figure out factor
-int VacuumOffset = 0;
+
 
 //-----------------------------------------------------------------------------
 // SiLabs_Startup() Routine
@@ -109,7 +111,7 @@ void SiLabs_Startup (void)
 {
    PCA0MD &= ~0x40;                    // Disable the watchdog timer
 }
- 
+
 //-----------------------------------------------------------------------------
 // Pin Declarations
 // todo: maybe move to Init.h
@@ -196,7 +198,10 @@ void main (void)
             error += DoMainStartup();
          break;
      case(VACUUM_WATER_PUMP):
+         while(1)
+           {
             error += DoPumpStartup();
+           }
          break;
      case(REVERSE_HEATER):
             error += DoRevHeatStartup();
@@ -260,6 +265,8 @@ long doInit(void)
   highSide_Init();
   ADC0_Init();
 
+  XBR2      = 0x40;
+
   return NO_ERROR;
 }
 
@@ -310,12 +317,12 @@ long getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Swi
   {
     //todo Calculate Value according to I_Sens
       //getAdcReading()
-      Switch_A->current = getAdcReading(P1_0, &adcReading)*CurrentFactor+CurrentOffset;
+      Switch_A->current = getAdcReading(P1_0, &adcReading)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
   }
   if(EN_B)
   {
       //todo Calculate Value according to I_Sens
-      Switch_B->current = getAdcReading(P1_1, &adcReading)*CurrentFactor+CurrentOffset;
+      Switch_B->current = getAdcReading(P1_1, &adcReading)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
   }
 
   //Check output Voltage
@@ -323,16 +330,16 @@ long getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Swi
   SEL2 = HIGH;
 
   //todo Calculate Value according to I_Sens
-  Switch_A->voltage = getAdcReading(P1_0, &adcReading)*VoltageFactor+VoltageOffset;
-  Switch_B->voltage = getAdcReading(P1_1, &adcReading)*VoltageFactor+VoltageOffset;
+  Switch_A->voltage = getAdcReading(P1_0, &adcReading)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
+  Switch_B->voltage = getAdcReading(P1_1, &adcReading)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
 
   //Check Temperature
   SEL1 = HIGH;
   SEL2 = LOW;
 
   //todo Calculate Value according to I_Sens
-  Switch_A->temperature = getAdcReading(P1_0, &adcReading)*TemperatureFactor+TemperatureOffset;
-  Switch_B->temperature = getAdcReading(P1_1, &adcReading)*TemperatureFactor+TemperatureOffset;
+  Switch_A->temperature = getAdcReading(P1_0, &adcReading)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
+  Switch_B->temperature = getAdcReading(P1_1, &adcReading)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
 
   return NO_ERROR;
 }
@@ -342,11 +349,11 @@ int getHighSideSwitchACurrent_mA()
   int adcReading;
   long error = NO_ERROR;
 
-  enabableHighSideSwitchDiagnostics();
+  SetHSSDiagnostics();
 
   error += getAdcReading(P1_0, &adcReading);  //todo: error handling
 
-  return adcReading*CurrentFactor+CurrentOffset;
+  return adcReading*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
 }
 
 int getHighSideSwitchBCurrent_mA()
@@ -354,14 +361,14 @@ int getHighSideSwitchBCurrent_mA()
   int adcReading;
   long error = NO_ERROR;
 
-  enabableHighSideSwitchDiagnostics();
+  SetHSSDiagnostics();
 
   error += getAdcReading(P1_1, &adcReading);  //todo: error handling
 
-  return adcReading*CurrentFactor+CurrentOffset;
+  return adcReading*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
 }
 
-void enabableHighSideSwitchDiagnostics()
+void SetHSSDiagnostics()
 {
   DIA_EN = HIGH;
   //Check output Current
@@ -420,14 +427,15 @@ long DoPumpStartup(void)
 {
   long error = NO_ERROR;
   int vacuumLevel = 0;
+  int vacuumLevel_off = 0;
 
   //get Vacuum Level
-  error += getPressureReading_mbar(&vacuumLevel);
+  error += getPressureReading_mbar(&vacuumLevel_off);
 
-  //enable Vacuum Pump
+//  enable Vacuum Pump
   EN_A = HIGH;
 
-//  Wait_ms((U16) 500); todo: does not work (probably due to U16 noatation)
+//  Wait_ms((U16) 500); //todo: does not work (probably due to U16 noatation)
 
   if(getHighSideSwitchACurrent_mA() < 100)  //check if Pump is running
   {
@@ -438,7 +446,7 @@ long DoPumpStartup(void)
 
   error += getPressureReading_mbar(&vacuumLevel);
 
-  if(vacuumLevel+50 >= vacuumLevel) //check if Vacuum is building up
+  if(vacuumLevel+50 >= vacuumLevel_off) //check if Vacuum is building up
   {
     if(error == BOARD_VACUUM_PUMP_ERROR)  // pump is not running, no Vacuum is building up
       {
@@ -602,50 +610,51 @@ void DoRevHeaterError(void)
   }
 
 //returns the DAC0 reading of the given pin(HEX)
-long getAdcReading(int pin, int *value) //todo: make work
+long getAdcReading(int pin, double *value) //todo: make work
 {
   //todo: uint*_t is not recognized
 
-//  int adcReading = 0;
-//
-//  ADC0MX = pin;
-//
-//  //---------------------------
-//  uint16_t i;                              // Sample counter
-//  uint32_t accumulator = 0L;               // Where the ADC samples are integrated
-//  uint16_t currval;                        // Current value of ADC0
-//
-//  uint8_t SFRPAGE_save = SFRPAGE;
-//  SFRPAGE = LEGACY_PAGE;
-//
-//  ADC0CN_ADINT = 0;                         // Clear end-of-conversion indicator
-//  ADC0CN_ADBUSY = 1;                        // Initiate conversion
-//
-//  // Accumulate 4096 samples and average to get a 16-bit result
-//  // 4096 samples = 12 bits; 12 extra bits + 12 samples per bit = 24 bits
-//  // Shift by 8 bits to calculate a 16-bit result.
-//
-//  i = 0;
-//  do
-//  {
-//     while (!ADC0CN_ADINT);                 // Wait for conversion to complete
-//     ADC0CN_ADINT = 0;                      // Clear end-of-conversion indicator
-//
-//     currval = ADC0;                  // Store latest ADC conversion
-//     ADC0CN_ADBUSY = 1;                     // Initiate conversion
-//     accumulator += currval;          // Accumulate
-//     i++;                             // Update counter
-//  } while (i != 4096);
-//
-//  accumulator = accumulator >> 8;     // 8-bit shift to go from 24 to 16 bits
-//
+  int adcReading = 0;
+
+  //---------------------------
+  uint16_t i;                              // Sample counter
+  uint32_t accumulator = 0L;               // Where the ADC samples are integrated
+  uint16_t currval;                        // Current value of ADC0
+
+  uint8_t SFRPAGE_save = SFRPAGE;
+  SFRPAGE = LEGACY_PAGE;
+
+  ADC0MX = pin;
+
+  ADC0CN_ADINT = 0;                         // Clear end-of-conversion indicator
+  ADC0CN_ADBUSY = 1;                        // Initiate conversion
+
+  // Accumulate 4096 samples and average to get a 16-bit result
+  // 4096 samples = 12 bits; 12 extra bits + 12 samples per bit = 24 bits
+  // Shift by 8 bits to calculate a 16-bit result.
+
+  i = 0;
+  do
+  {
+     while (!ADC0CN_ADINT);                 // Wait for conversion to complete
+     ADC0CN_ADINT = 0;                      // Clear end-of-conversion indicator
+
+     currval = ADC0;                  // Store latest ADC conversion
+     ADC0CN_ADBUSY = 1;                     // Initiate conversion
+     accumulator += currval;          // Accumulate
+     i++;                             // Update counter
+  } while (i != 4096);
+
+  accumulator = accumulator >> 8;     // 8-bit shift to go from 24 to 16 bits
+
 //  *value = (uint16_t) (((uint32_t) accumulator * (uint32_t) VREF) / (uint32_t) 65536);
-//
-//  // Note that the numbers were rounded when equation was solved.
-//  // This rounding does introduce error to the calculation, but it is
-//  // negligible when looking for an estimated temperature.
-//
-//  SFRPAGE = SFRPAGE_save;
+  *value = (uint16_t) (((double) accumulator * (double) VREF) / (double) 65536);
+
+  // Note that the numbers were rounded when equation was solved.
+  // This rounding does introduce error to the calculation, but it is
+  // negligible when looking for an estimated temperature.
+
+  SFRPAGE = SFRPAGE_save;
 
   return NO_ERROR;
 
@@ -662,7 +671,9 @@ long getPressureReading_mbar(int *value)
   error += getAdcReading(P1_7, &vacuumSensorReading); //todo: dont understand warning
 
   //calculate pressure [mBar], based on 101kPa (athmosperic pressure @ 0müm)
-  *value = 101 - (int)(vacuumSensorReading*VacuumFactor+VacuumOffset);
+//  *value = 101 - (int)(vacuumSensorReading*VacuumFactor+VacuumOffset);
+  *value = (int)(vacuumSensorReading*VACUUM_FACTOR+VACUUM_OFFSET);
+
   return error;
 }
 // Initialization Subroutines
