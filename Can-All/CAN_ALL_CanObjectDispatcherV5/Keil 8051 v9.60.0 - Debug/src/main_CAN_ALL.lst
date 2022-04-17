@@ -1,0 +1,990 @@
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE MAIN_CAN_ALL
+OBJECT MODULE PLACED IN .\src\main_CAN_ALL.OBJ
+COMPILER INVOKED BY: C:\SiliconLabs\SimplicityStudio\v5\developer\toolchains\keil_8051\9.60\BIN\C51.exe D:\Work\CAN-ALL\
+                    -Can-All\CAN_ALL_CanObjectDispatcherV5\src\main_CAN_ALL.c OMF2 LARGE DEBUG OBJECTEXTEND ROM(LARGE) WARNINGLEVEL(2) FLOATF
+                    -UZZY(3) OPTIMIZE(8,SPEED) DEFINE(DEBUG=1) INTVECTOR(0X0000) INTPROMOTE INCDIR(C:/SiliconLabs/SimplicityStudio/v5/develop
+                    -er/sdks/8051/v4.2.3//Device/shared/si8051Base;C:/SiliconLabs/SimplicityStudio/v5/developer/sdks/8051/v4.2.3//Device/C805
+                    -1F550/inc) PRINT(.\src\main_CAN_ALL.lst) COND PAGEWIDTH(120) PAGELENGTH(65) OBJECT(.\src\main_CAN_ALL.OBJ)
+
+line level    source
+
+   1          
+   2          #include <SI_C8051F550_Defs.h>
+   3          #include <SI_C8051F550_Register_Enums.h>
+   4          #include <STRING.h>
+   5          
+   6          
+   7          //-----------------------------------------------------------------------------
+   8          // Type Definitions
+   9          //-----------------------------------------------------------------------------
+  10          
+  11          
+  12          typedef union SI_UU64
+  13          {
+  14            uint32_t u32[2];
+  15            uint16_t u16[4];
+  16            uint8_t u8[8];
+  17          } SI_UU64_t;
+  18          
+  19          
+  20          //-----------------------------------------------------------------------------
+  21          // Function Prototypes
+  22          //-----------------------------------------------------------------------------
+  23          
+  24          void OSCILLATOR_Init (void);
+  25          void PORT_Init (void);
+  26          void TIMER0_Init(void);
+  27          
+  28          void CANinit (void);
+  29          void CANsetupMessageObj(uint8_t objNum, uint16_t canId, uint8_t dirTx,  uint8_t len, SI_UU64_t payload);
+  30          void CANtransferMessageObj(uint8_t objNum, SI_UU64_t payload);
+  31          void CANtriggerMessageObj(uint8_t objNum);
+  32          SI_UU64_t CANgetMessageObjPayload(uint8_t objNum);
+  33          int16_t CANgetMessageInt(uint8_t objNum, uint8_t startIndex);
+  34          //SI_UU64_t CANgetMessageObj(uint8_t objNum, uint16_t *canId, uint8_t *dirTx,  uint8_t *len, SI_UU64_t pay
+             -load);
+  35          
+  36          SI_INTERRUPT_PROTO(CAN0_ISR, INTERRUPT_CAN0);
+  37          SI_INTERRUPT_PROTO(TIMER0_ISR, INTERRUPT_TIMER0);
+  38          
+  39          //-----------------------------------------------------------------------------
+  40          // Global Constants
+  41          //-----------------------------------------------------------------------------
+  42          
+  43          
+  44          #define SYSCLK         (24000000)        // System clock speed in Hz
+  45          
+  46          #define POLLRATE_HZ          (20)        // Timer Frequency in Hz.
+  47                                                   // Minimum value is 1 (battery needs min. 10Hz)
+  48          #define STARTUP_DELAY        (10)        // POLLRATE_HZ /s * STARTUP_DELAY
+  49                                                 
+  50          #define MESSAGE_OBJECTS      (33)        // Number of message objects to use
+  51                                                 // Range is 1-32 + 1 Dummy 0 + 32 is same
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 2   
+
+  52          
+  53          #define TX_COMPLETE_MASK  (0xFFFFFFFF)   // Set this to (2^MESSAGE_OBJECTS - 1)
+  54          
+  55          #define NUM_OF_BATTERIES (0)            // Minimal amount of batteries in use
+  56          
+  57          // Reload value for Timer0 assuming a 1:48 scaling factor for Timer0 clock
+  58          #define TIMER0_RL_HIGH  (0xFFFF -((SYSCLK/48/POLLRATE_HZ >> 8) & 0x00FF))
+  59          #define TIMER0_RL_LOW   (0xFFFF -(SYSCLK/48/POLLRATE_HZ & 0x00FF))
+  60          
+  61          #define SEND_HEARTBEAT (1)
+  62          #define SEND_DBG_COUNTER (0)
+  63          
+  64          // CAN-Ids for Message Objects.
+  65          
+  66          #define CAN_ID_BROADCAST   (0x000)
+  67          #define CAN_ID_HEARTBEAT   (0x700) // Test Message of this device
+  68          #define CAN_ALL_ID         (0x01B) // Test Message of this device
+  69          
+  70          #define CAN_ID_BAT1   (0x006)
+  71          #define CAN_ID_BAT2   (0x007)
+  72          #define CAN_ID_BAT3   (0x008)
+  73          #define CAN_ID_BAT4   (0x009)
+  74          
+  75          // Contents of message
+  76          #define BMS_BAT_ON          (0x01)
+  77          #define BMS_BAT_OFF         (0x00)
+  78          #define BMS_BAT_CH          (0x02)
+  79          #define BMS_STATE_VALID_VALUES (0x0004)
+  80          #define BMS_STATE_NODE_ACTIVE  (0x0001)
+  81          
+  82          //-----------------------------------------------------------------------------
+  83          // Bit Definition Masks
+  84          //-----------------------------------------------------------------------------
+  85          
+  86          // CAN0STAT
+  87          #define BOff  (0x80)                     // Busoff Status
+  88          #define EWarn (0x40)                     // Warning Status
+  89          #define EPass (0x20)                     // Error Passive
+  90          #define RxOk  (0x10)                     // Receive Message Successfully
+  91          #define TxOk  (0x08)                     // Transmitted Message Successfully
+  92          #define LEC   (0x07)                     // Last Error Code
+  93          
+  94          //-----------------------------------------------------------------------------
+  95          // Pin Definitions
+  96          //-----------------------------------------------------------------------------
+  97          
+  98          SI_SBIT(LED, SFR_P0, 0);                 // LED = 0 turns on the green LED
+  99          
+ 100          //-----------------------------------------------------------------------------
+ 101          // Global Variables
+ 102          //-----------------------------------------------------------------------------
+ 103          
+ 104          bit CAN_ERROR = 0;                     // 0 = No Errors during transmission
+ 105                                                 // 1 = Some error(s) occurred
+ 106          
+ 107          SI_UU32_t CAN_RXTX_COMPLETE;           // Bit status register that is updated
+ 108                                                 // when a RX or TX is complete is received for
+ 109                                                 // a specific message object.  Should be
+ 110                                                 // equal to TX_COMPLETE_MASK when done
+ 111          
+ 112          SI_UU64_t LastBroadcastMsg;                // TempData to define CAN-Messages
+ 113          
+ 114          
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 3   
+
+ 115          uint8_t DebugInput = 0;
+ 116          //uint16_t MotorRpm;
+ 117          uint16_t Battery1SoC;
+ 118          uint16_t Battery1SoH;
+ 119          uint16_t Battery2SoC;
+ 120          uint16_t Battery2SoH;
+ 121          uint16_t Battery3SoC;
+ 122          uint16_t Battery3SoH;
+ 123          uint16_t Battery4SoC;
+ 124          uint16_t Battery4SoH;
+ 125          uint16_t BatterySoC;
+ 126          uint16_t BatterySoH;
+ 127          int16_t Current1;
+ 128          int16_t Current2;
+ 129          int16_t Current3;
+ 130          int16_t Current4;
+ 131          
+ 132          
+ 133          #define BAT_CH   (0x02)
+ 134          #define BAT_ON   (0x01)
+ 135          #define BAT_OFF  (0x00)
+ 136          
+ 137          #define TPDO1_BMS     0x1E0
+ 138          #define RPDO1_BMS     0x200
+ 139          
+ 140          #define CAN_DIR_TX    0x01
+ 141          #define CAN_DIR_RX    0x00
+ 142          
+ 143          
+ 144          #define SET_BAT1_STATE (1)  // Message Object to transmit State Msg to BAT1
+ 145          #define SET_BAT2_STATE (2)  // Message Object to transmit State Msg to BAT2
+ 146          #define SET_BAT3_STATE (3)  // Message Object to transmit State Msg to BAT3
+ 147          #define SET_BAT4_STATE (4)  // Message Object to transmit State Msg to BAT4
+ 148          
+ 149          #define GET_BAT1_STATE (5)  // Message Object to receive State Msg from BAT1
+ 150          #define GET_BAT2_STATE (6)  // Message Object to receive State Msg from BAT2
+ 151          #define GET_BAT3_STATE (7)  // Message Object to receive State Msg from BAT3
+ 152          #define GET_BAT4_STATE (8)  // Message Object to receive State Msg from BAT4
+ 153          
+ 154          #define SET_BROADCAST (9)   // Message Object to transmit Broadcast such as <Start All Nodes>
+ 155          #define SET_HEARTBEAT (10)  // Message Object to transmit Heartbeat or Startup Message to the CAN-BUS
+ 156          #define GET_DEBUG_IN  (11)  // Message Object to receive Commands to this Module
+ 157          #define SET_DEBUG_OUT (12)  // Message Object to transmit Commands to this Module
+ 158          
+ 159          #define GET_BROADCAST (32)  // Message Object to transmit Broadcast such as <Start All Nodes>
+ 160          
+ 161          static uint8_t NumOfBat = 0;
+ 162          volatile SI_UU64_t CanMsgObject[MESSAGE_OBJECTS];
+ 163          volatile uint16_t CanMsgId[MESSAGE_OBJECTS];
+ 164          
+ 165          static const uint16_t MessageBoxCanId[MESSAGE_OBJECTS] = // List of all CAN IDs associated to the CAN-obje
+             -cts
+ 166          {
+ 167              CAN_ID_BROADCAST, // Dummy Line MsgObj0
+ 168              RPDO1_BMS + CAN_ID_BAT1, RPDO1_BMS + CAN_ID_BAT2, RPDO1_BMS + CAN_ID_BAT3, RPDO1_BMS + CAN_ID_BAT4, TP
+             -DO1_BMS + CAN_ID_BAT1, TPDO1_BMS + CAN_ID_BAT2, TPDO1_BMS + CAN_ID_BAT3, TPDO1_BMS + CAN_ID_BAT4,  //line 1-8
+ 169              CAN_ID_BROADCAST, CAN_ID_HEARTBEAT + CAN_ALL_ID, CAN_ALL_ID, CAN_ALL_ID, 0x013, 0x014, 0x015, 0x016,  
+             -//line 9-16
+ 170              0x017, 0x018, 0x019, 0x020, 0x021, 0x022, 0x023, 0x024,  //line 17-24
+ 171              0x025, 0x026, 0x027, 0x028, 0x029, 0x030, 0x031, CAN_ID_BROADCAST,  //line 25-32
+ 172          };
+ 173          
+ 174          static const uint8_t MessageBoxDirTx[MESSAGE_OBJECTS] = // List of all directions associated to the CAN-ob
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 4   
+
+             -jects
+ 175          {
+ 176              CAN_DIR_RX, // Dummy Line MsgObj0
+ 177              CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //lin
+             -e 1-8
+ 178              CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_RX, CAN_DIR_TX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //lin
+             -e 9-16
+ 179              CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //lin
+             -e 17-24
+ 180              CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //lin
+             -e 25-32
+ 181          };
+ 182          
+ 183          static const uint8_t MessageBoxSize[MESSAGE_OBJECTS] = // List of all size  of all active CAN-objects 0-7
+ 184          {
+ 185              8,// Dummy Line MsgObj0 Copy of 32!
+ 186              8, 8, 8, 8, 8, 8, 8, 8,   //line 1-8
+ 187              2, 1, 1, 2, 0, 0, 0, 0,   //line 9-16
+ 188              0, 0, 0, 0, 0, 0, 0, 0,   //line 17-24
+ 189              0, 0, 0, 0, 0, 0, 0, 8,   //line 25-32
+ 190          };
+ 191          
+ 192          static const uint8_t MessageBoxInUse[MESSAGE_OBJECTS] = // List of all active CAN-objects
+ 193          {
+ 194              1,  // Dummy Line MsgObj0 Copy of 32!
+ 195              1, 1, 1, 1, 1, 1, 1, 1,   //line 1-8
+ 196              1, 1, 1, 1, 0, 0, 0, 0,   //line 9-16
+ 197              0, 0, 0, 0, 0, 0, 0, 0,   //line 17-24
+ 198              0, 0, 0, 0, 0, 0, 0, 1,   //line 25-32
+ 199          };
+ 200          
+ 201          
+ 202          //-----------------------------------------------------------------------------
+ 203          // SiLabs_Startup() Routine
+ 204          // ----------------------------------------------------------------------------
+ 205          // This function is called immediately after reset, before the initialization
+ 206          // code is run in SILABS_STARTUP.A51 (which runs before main() ). This is a
+ 207          // useful place to disable the watchdog timer, which is enable by default
+ 208          // and may trigger before main() in some instances.
+ 209          //-----------------------------------------------------------------------------
+ 210          void SiLabs_Startup (void)
+ 211          {
+ 212   1         PCA0MD &= ~0x40;                    // Disable Watchdog Timer
+ 213   1      }
+ 214           
+ 215          //-----------------------------------------------------------------------------
+ 216          // MAIN Routine
+ 217          //-----------------------------------------------------------------------------
+ 218          
+ 219          void main (void)
+ 220          {
+ 221   1        SFRPAGE = LEGACY_PAGE;              // Set for PCA0MD
+ 222   1        memset(CanMsgObject, 0, sizeof(CanMsgObject));
+ 223   1      
+ 224   1         OSCILLATOR_Init ();                 // Initialize oscillator
+ 225   1         PORT_Init ();                       // Initialize crossbar and GPIO
+ 226   1         TIMER0_Init ();                     // Initialize Timer 0
+ 227   1         CANinit();                       // Start CAN peripheral
+ 228   1      
+ 229   1         CAN_RXTX_COMPLETE.u32 = 0x0000;       // Initialize as no messages transmitted
+ 230   1      
+ 231   1         EIE2 |= 0x02;                       // Enable CAN interrupts
+ 232   1         IE_EA = 1;                          // Enable global interrupts
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 5   
+
+ 233   1      
+ 234   1         // The CAN0 ISR will handle any received messages
+ 235   1      
+ 236   1         // The Timer0 ISR will periodically poll and transmit a message
+ 237   1      
+ 238   1         // Example Application
+ 239   1      
+ 240   1         // StartAllNodes
+ 241   1      
+ 242   1         while (1)
+ 243   1           {
+ 244   2           //MotorRpm = CANgetMessageInt(GET_INV_RMP, x);
+ 245   2             IE_EA = 0;                          // Disable global interrupts
+ 246   2             DebugInput = CANgetMessageInt(GET_DEBUG_IN, 0);
+ 247   2             Battery1SoC  =  CANgetMessageInt(GET_BAT1_STATE, 4);
+ 248   2             Battery2SoC  =  CANgetMessageInt(GET_BAT2_STATE, 4);
+ 249   2             Battery3SoC  =  CANgetMessageInt(GET_BAT3_STATE, 4);
+ 250   2             Battery4SoC  =  CANgetMessageInt(GET_BAT4_STATE, 4);
+ 251   2             Battery1SoH  =  CANgetMessageInt(GET_BAT1_STATE, 6);
+ 252   2             Battery2SoH  =  CANgetMessageInt(GET_BAT2_STATE, 6);
+ 253   2             Battery3SoH  =  CANgetMessageInt(GET_BAT3_STATE, 6);
+ 254   2             Battery4SoH  =  CANgetMessageInt(GET_BAT4_STATE, 6);
+ 255   2             LastBroadcastMsg = CANgetMessageObjPayload(GET_BROADCAST);
+ 256   2             IE_EA = 1;                          // Enable global interrupts
+ 257   2             BatterySoC  =   (Battery1SoC + Battery2SoC + Battery3SoC + Battery4SoC)/(NumOfBat) ? NumOfBat : 1;
+ 258   2             BatterySoH  =   (Battery1SoH + Battery2SoH + Battery3SoH + Battery4SoH)/(NumOfBat) ? NumOfBat : 1;
+ 259   2             LED = DebugInput;
+ 260   2           }
+ 261   1      }
+ 262          
+ 263          //-----------------------------------------------------------------------------
+ 264          // Initialization Subroutines
+ 265          //-----------------------------------------------------------------------------
+ 266          
+ 267          //-----------------------------------------------------------------------------
+ 268          // OSCILLATOR_Init
+ 269          //-----------------------------------------------------------------------------
+ 270          //
+ 271          // Return Value : None
+ 272          // Parameters   : None
+ 273          //
+ 274          // Initialize the internal oscillator to 24 MHz
+ 275          //
+ 276          //-----------------------------------------------------------------------------
+ 277          void OSCILLATOR_Init (void)
+ 278          {
+ 279   1         uint8_t SFRPAGE_save = SFRPAGE;
+ 280   1         SFRPAGE = CONFIG_PAGE;
+ 281   1      
+ 282   1         OSCICN = 0x87;                      // Set internal oscillator divider to 1
+ 283   1      
+ 284   1         SFRPAGE = SFRPAGE_save;
+ 285   1      }
+ 286          
+ 287          //-----------------------------------------------------------------------------
+ 288          // PORT_Init
+ 289          //-----------------------------------------------------------------------------
+ 290          //
+ 291          // Return Value : None
+ 292          // Parameters   : None
+ 293          //
+ 294          // This function configures the crossbar and ports pins.
+ 295          //
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 6   
+
+ 296          // P0.6   digital  push-pull        CAN TX
+ 297          // P0.7   digital  open-drain       CAN RX
+ 298          //
+ 299          //
+ 300          //-----------------------------------------------------------------------------
+ 301          void PORT_Init (void)
+ 302          {
+ 303   1         uint8_t SFRPAGE_save = SFRPAGE;
+ 304   1         SFRPAGE  = CONFIG_PAGE;             // Port SFR's on Configuration page
+ 305   1      
+ 306   1         P0MDOUT  |= 0x40;                   // P0.6 (CAN0 TX) is push-pull
+ 307   1      
+ 308   1         XBR0     = 0x02;                    // Enable CAN0 on Crossbar
+ 309   1         XBR2     = 0x40;                    // Enable Crossbar and weak pull-ups
+ 310   1      
+ 311   1         SFRPAGE = SFRPAGE_save;
+ 312   1      }
+ 313          
+ 314          
+ 315          //-----------------------------------------------------------------------------
+ 316          // TIMER0_Init
+ 317          //-----------------------------------------------------------------------------
+ 318          //
+ 319          // Return Value:  None
+ 320          // Parameters:    None
+ 321          //
+ 322          // Configure Timer0 to 16-bit Timer mode and generate an interrupt
+ 323          // every TIMER0_RL Timer0 cycles using SYSCLK/48 as the Timer0 time base.
+ 324          //
+ 325          //-----------------------------------------------------------------------------
+ 326          void TIMER0_Init(void)
+ 327          {
+ 328   1         // No need to set SFRPAGE as all registers accessed in this function
+ 329   1         // are available on all pages
+ 330   1      
+ 331   1         TH0 = TIMER0_RL_HIGH;               // Init Timer0 High register
+ 332   1         TL0 = TIMER0_RL_LOW;                // Init Timer0 Low register
+ 333   1      
+ 334   1         TMOD  = 0x01;                       // Timer0 in 16-bit mode
+ 335   1         CKCON = 0x02;                       // Timer0 uses a 1:48 prescaler
+ 336   1         IE_ET0 = 1;                         // Timer0 interrupt enabled
+ 337   1         TCON  = 0x10;                       // Timer0 ON
+ 338   1      }
+ 339          
+ 340          //-----------------------------------------------------------------------------
+ 341          // CANinit
+ 342          //-----------------------------------------------------------------------------
+ 343          //
+ 344          // Return Value : None
+ 345          // Parameters   : None
+ 346          //
+ 347          // This function initializes the CAN peripheral and message objects
+ 348          //
+ 349          // CAN Bit Clock : 500kbps
+ 350          // Auto Retransmit : Automatic Retransmission is enabled
+ 351          // MsgVal        : Set to Valid based on the #define MESSAGE_OBJECTS
+ 352          // Filtering     : Enabled for all valid message objects
+ 353          // Message Identifier : 11-bit standard; Each message object is only used by
+ 354          //                      one message ID
+ 355          // Direction     : One buffer each is configured for transmit and receive
+ 356          // End of Buffer : All message objects are treated as separate buffers
+ 357          //
+ 358          // The following interrupts are enabled and are handled by CAN0_ISR
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 7   
+
+ 359          //
+ 360          // Error Interrupts
+ 361          // Status Change Interrupt
+ 362          // Receive Interrupt
+ 363          // Transmit Interrupt
+ 364          //-----------------------------------------------------------------------------
+ 365          void CANinit (void)
+ 366          {
+ 367   1         uint8_t i;
+ 368   1      
+ 369   1         uint8_t SFRPAGE_save = SFRPAGE;
+ 370   1         SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+ 371   1      
+ 372   1         CAN0CN |= 0x01;                     // Start Initialization mode
+ 373   1      
+ 374   1         //---------Initialize general CAN peripheral settings
+ 375   1      
+ 376   1         CAN0CN |= 0x4E;                     // Enable Error and Module Interrupts
+ 377   1                                             // Enable access to bit timing register
+ 378   1      
+ 379   1         // See the CAN Bit Timing Spreadsheet for how to calculate this value
+ 380   1         CAN0BT = 0x1C02;                    // Based on 24 MHz CAN clock, set the
+ 381   1                                             // CAN bit rate to 500kbps
+ 382   1      
+ 383   1       
+ 384   1         //---------Initialize settings common to all message objects
+ 385   1      
+ 386   1         // Command Mask Register
+ 387   1         CAN0IF1CM = 0x00F0;                 // Write Operation
+ 388   1                                             // Transfer ID Mask, MDir, MXtd
+ 389   1                                             // Transfer ID, Dir, Xtd, MsgVal
+ 390   1                                             // Transfer Control Bits
+ 391   1                                             // Don't set TxRqst or transfer data
+ 392   1      
+ 393   1         // Mask Registers
+ 394   1         CAN0IF1M1 = 0x0000;                 // Mask Bits 15-0 not used for filtering
+ 395   1         CAN0IF1M2 = 0x5FFC;                 // Ignore Extended Identifier for
+ 396   1                                             // filtering
+ 397   1                                             // Used Direction bit for filtering
+ 398   1                                             // Use ID bits 28-18 for filtering
+ 399   1                                             
+ 400   1         // Arbitration Registers
+ 401   1         CAN0IF1A1 = 0x0000;                 // 11-bit ID, so lower 16-bits not used
+ 402   1      
+ 403   1      
+ 404   1         //---------Initialize settings for each valid message object
+ 405   1      
+ 406   1         for (i = 0; i < MESSAGE_OBJECTS; i++) // 0 denotes MsgObject 32!
+ 407   1         {
+ 408   2      
+ 409   2             if (MessageBoxInUse[i])
+ 410   2               {
+ 411   3                 if (MessageBoxDirTx[i])
+ 412   3                  {
+ 413   4                    // Message Control Registers
+ 414   4          //          CAN0IF1MC = 0x0880 | MessageBoxSize[i];  // Enable Transmit Interrupt
+ 415   4                    CAN0IF1MC = 0x0080 | MessageBoxSize[i];  // Disable Transmit Interrupt
+ 416   4                                                        // Message Object is a Single Message
+ 417   4                                                        // Message Size set by #define
+ 418   4      
+ 419   4                    CAN0IF1A2 = 0xA000 | (MessageBoxCanId[i] << 2);  // Set MsgVal to valid
+ 420   4                                                     // Set Direction to write
+ 421   4                                                     // Set 11-bit Identifier
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 8   
+
+ 422   4                  }
+ 423   3                else
+ 424   3                  {
+ 425   4                    CAN0IF1MC = 0x1480 | MessageBoxSize[i];  // Enable Receive Interrupt
+ 426   4                                                        // Message Object is a Single Message
+ 427   4                                                        // Message Size set by #define
+ 428   4      
+ 429   4                    // Arbitration Registers
+ 430   4                    CAN0IF1A2 = 0x8000 | (MessageBoxCanId[i] << 2);  // Set MsgVal to valid
+ 431   4                                                           // Set Object Direction to read
+ 432   4                                                           // Set 11-bit Identifier
+ 433   4                  }
+ 434   3               }
+ 435   2             else
+ 436   2               {
+ 437   3                 // Set remaining message objects to be Ignored
+ 438   3                 CAN0IF1A2 = 0x0000;              // Set MsgVal to 0 to Ignore
+ 439   3                 CAN0IF1CR = i;                // Start command request
+ 440   3      
+ 441   3               }
+ 442   2            CAN0IF1CR = i;                // Start command request
+ 443   2            while (CAN0IF1CRH & 0x80);       // Poll on Busy bit
+ 444   2         }
+ 445   1         //--------- CAN initialization is complete
+ 446   1      
+ 447   1         CAN0CN &= ~0x41;                    // Return to Normal Mode and disable
+ 448   1                                             // access to bit timing register
+ 449   1      
+ 450   1         EIE2 |= 0x02;                       // Enable CAN interrupts
+ 451   1      
+ 452   1         SFRPAGE = SFRPAGE_save;
+ 453   1      }
+ 454          
+ 455          //-----------------------------------------------------------------------------
+ 456          // Supporting Subroutines
+ 457          //-----------------------------------------------------------------------------
+ 458          
+ 459          //-----------------------------------------------------------------------------
+ 460          // CANsetupMessageObj
+ 461          //-----------------------------------------------------------------------------
+ 462          //
+ 463          // Return Value : None
+ 464          // Parameters   : uint8_t obj_num - message object number to send data
+ 465          //                             range is 0x01 - 0x20
+ 466          //              : SI_UU64_t payload - CAN message to send (8 Bytes)
+ 467          //
+ 468          //
+ 469          // Send data using the message object and payload passed as the parameters.
+ 470          //
+ 471          //-----------------------------------------------------------------------------
+ 472          void CANsetupMessageObj(uint8_t objNum, uint16_t canId, uint8_t dirTx,  uint8_t len, SI_UU64_t payload)
+ 473          {
+ 474   1           uint8_t SFRPAGE_save = SFRPAGE;
+ 475   1           SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+ 476   1      
+ 477   1           // Deactivate MessageObject before modification can take place
+ 478   1           CAN0IF1A2 = 0x0000;              // Set MsgVal to 0 to Ignore
+ 479   1           CAN0IF1CR = objNum;              // Start command request
+ 480   1           while (CAN0IF1CRH & 0x80);       // Poll on Busy bit
+ 481   1      
+ 482   1           // Command Mask Register
+ 483   1           CAN0IF1CM = 0x00F0;                 // Write Operation
+ 484   1                                               // Transfer ID Mask, MDir, MXtd
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 9   
+
+ 485   1                                               // Transfer ID, Dir, Xtd, MsgVal
+ 486   1                                               // Transfer Control Bits
+ 487   1                                               // Don't set TxRqst or transfer data
+ 488   1      
+ 489   1           // Mask Registers
+ 490   1           CAN0IF1M1 = 0x0000;                 // Mask Bits 15-0 not used for filtering
+ 491   1           CAN0IF1M2 = 0x5FFC;                 // Ignore Extended Identifier for
+ 492   1                                               // filtering
+ 493   1                                               // Used Direction bit for filtering
+ 494   1                                               // Use ID bits 28-18 for filtering
+ 495   1      
+ 496   1           // Arbitration Registers
+ 497   1           CAN0IF1A1 = 0x0000;                 // 11-bit ID, so lower 16-bits not used
+ 498   1      
+ 499   1      
+ 500   1           if (dirTx)
+ 501   1             {
+ 502   2               // Message Control Registers
+ 503   2       //        CAN0IF1MC = 0x0880 | len;  // Enable Transmit Interrupt
+ 504   2               CAN0IF1MC = 0x0080 | len;  // Disable Transmit Interrupt
+ 505   2                                                  // Message Object is a Single Message
+ 506   2                                                   // Message Size set by variable: len
+ 507   2      
+ 508   2      
+ 509   2               CAN0IF1A2 = 0xA000 | (canId << 2);  // Set MsgVal to valid
+ 510   2      
+ 511   2               CAN0IF1DA1L = payload.u8[0]; // Initialize data registers based
+ 512   2               CAN0IF1DA1H = payload.u8[1]; // on message object used
+ 513   2               CAN0IF1DA2L = payload.u8[2];
+ 514   2               CAN0IF1DA2H = payload.u8[3];
+ 515   2               CAN0IF1DB1L = payload.u8[4];
+ 516   2               CAN0IF1DB1H = payload.u8[5];
+ 517   2               CAN0IF1DB2L = payload.u8[6];
+ 518   2               CAN0IF1DB2H = payload.u8[7];
+ 519   2             }
+ 520   1           else
+ 521   1             {
+ 522   2      
+ 523   2               // Message Control Registers
+ 524   2               CAN0IF1MC = 0x1480 | len;  // Enable Receive Interrupt
+ 525   2                                                   // Message Object is a Single Message
+ 526   2                                                   // Message Size set by variable: len
+ 527   2               // Arbitration Registers
+ 528   2               CAN0IF1A2 = 0x8000 | (canId << 2);  // Set MsgVal to valid
+ 529   2                                                   // Set 11-bit Identifier to iter
+ 530   2             }
+ 531   1           CAN0IF1CR = objNum;                // Start command request
+ 532   1      
+ 533   1           while (CAN0IF1CRH & 0x80);       // Poll on Busy bit
+ 534   1      
+ 535   1           // Message Control Registers
+ 536   1           CAN0IF1MC = 0x0080 | len;  // Disable Transmit Interrupt
+ 537   1                                               // Message Object is a Single Message
+ 538   1                                               // Message Size set by #define
+ 539   1           // Arbitration Registers
+ 540   1           CAN0IF1A1 = 0x0000;                 // 11-bit ID, so lower 16-bits not used
+ 541   1      
+ 542   1           // Arbitration Registers
+ 543   1           CAN0IF1A2 = 0xA000 | (canId << 2);  // Set MsgVal to valid
+ 544   1                                                  // Set Direction to write
+ 545   1                                                  // Set 11-bit Identifier to iter
+ 546   1      
+ 547   1           CAN0IF1CR = objNum;            // Start command request
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 10  
+
+ 548   1      
+ 549   1           while (CAN0IF1CRH & 0x80);        // Poll on Busy bit
+ 550   1           SFRPAGE = SFRPAGE_save;
+ 551   1      }
+ 552          
+ 553          
+ 554          //-----------------------------------------------------------------------------
+ 555          // CANtransferMessageObj
+ 556          //-----------------------------------------------------------------------------
+ 557          //
+ 558          // Return Value : None
+ 559          // Parameters   : uint8_t obj_num - message object number to send data
+ 560          //                             range is 0x01 - 0x20
+ 561          //              : SI_UU64_t payload - CAN message to send (8 Bytes)
+ 562          //
+ 563          // Send data using the message object and payload passed as the parameters.
+ 564          //
+ 565          //-----------------------------------------------------------------------------
+ 566          
+ 567          void CANtransferMessageObj(uint8_t objNum, SI_UU64_t payload)
+ 568          {
+ 569   1      
+ 570   1         uint8_t SFRPAGE_save = SFRPAGE;
+ 571   1         SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+ 572   1      
+ 573   1         // Initialize all 8 data bytes even though they might not be sent
+ 574   1         // The number to send was configured earlier by setting Message Control
+ 575   1      
+ 576   1         CAN0IF1DA1L = payload.u8[0]; // Initialize data registers based
+ 577   1         CAN0IF1DA1H = payload.u8[1]; // on message object used
+ 578   1         CAN0IF1DA2L = payload.u8[2];
+ 579   1         CAN0IF1DA2H = payload.u8[3];
+ 580   1         CAN0IF1DB1L = payload.u8[4];
+ 581   1         CAN0IF1DB1H = payload.u8[5];
+ 582   1         CAN0IF1DB2L = payload.u8[6];
+ 583   1         CAN0IF1DB2H = payload.u8[7];
+ 584   1      
+ 585   1         CAN0IF1CM = 0x0087;                 // Set Direction to Write
+ 586   1                                             // Write TxRqst, all 8 data bytes
+ 587   1                                             // (chapter 4.4 Bosch C_CAN)
+ 588   1      
+ 589   1         CAN0IF1CR = objNum;                // Start command request
+ 590   1      
+ 591   1         while (CAN0IF1CRH & 0x80);          // Poll on Busy bit
+ 592   1      
+ 593   1         SFRPAGE = SFRPAGE_save;
+ 594   1      }
+ 595          
+ 596          //-----------------------------------------------------------------------------
+ 597          // CANtriggerMessageObj
+ 598          //-----------------------------------------------------------------------------
+ 599          //
+ 600          // Return Value : None
+ 601          // Parameters   : uint8_t obj_num - message object number to send data
+ 602          //                             range is 0x01 - 0x20
+ 603          ///
+ 604          // Send data using the message object and payload passed while init phase.
+ 605          //
+ 606          //-----------------------------------------------------------------------------
+ 607          
+ 608          void CANtriggerMessageObj(uint8_t objNum)
+ 609          {
+ 610   1      
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 11  
+
+ 611   1         uint8_t SFRPAGE_save = SFRPAGE;
+ 612   1         SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+ 613   1      
+ 614   1         CAN0IF1CR = objNum;                // Start command request
+ 615   1      
+ 616   1         while (CAN0IF1CRH & 0x80);          // Poll on Busy bit
+ 617   1      
+ 618   1         SFRPAGE = SFRPAGE_save;
+ 619   1      }
+ 620          
+ 621          
+ 622          //-----------------------------------------------------------------------------
+ 623          // CANgetMessageObjPayload
+ 624          //-----------------------------------------------------------------------------
+ 625          //
+ 626          // Return Value : SI_UU64_t payload -Full CAN-Message
+ 627          // Parameters   : uint8_t objNum - message object number to read data from
+ 628          //                             range is 0x01 - 0x20
+ 629          //
+ 630          // Provides an atomic section for the consistent access to a specific payload
+ 631          //
+ 632          //-----------------------------------------------------------------------------
+ 633          
+ 634          SI_UU64_t CANgetMessageObjPayload(uint8_t objNum)
+ 635          {
+ 636   1        SI_UU64_t payload;
+ 637   1        uint8_t intStatSave = IE_EA;         // Preserve state of global Interrupts
+ 638   1      
+ 639   1        IE_EA = 0;                            // Disable global interrupts
+ 640   1      //  EIE2 &= ~0x02;                      // Disable CAN interrupts
+ 641   1        payload = CanMsgObject[objNum];
+ 642   1      //  EIE2 |= 0x02;                       // Enable CAN interrupts
+ 643   1        IE_EA = intStatSave;                 // restore global interrupts
+ 644   1      
+ 645   1        return payload;
+ 646   1      }
+ 647          
+ 648          
+ 649          
+ 650          //-----------------------------------------------------------------------------
+ 651          // CANgetMessageInt
+ 652          //-----------------------------------------------------------------------------
+ 653          //
+ 654          // Return Value : int16_t
+ 655          // Parameters   : uint8_t objNum - message object number to read data from
+ 656          //                             range is 0x01 - 0x20
+ 657          //                uint8_t startIndex - index where to start conversion from
+ 658          //
+ 659          // Provides an atomic section for the consistent access to a specific signed word
+ 660          //
+ 661          //-----------------------------------------------------------------------------
+ 662          
+ 663          int16_t CANgetMessageInt(uint8_t objNum, uint8_t startIndex)
+ 664          {
+ 665   1        SI_UU64_t payload;
+ 666   1        SI_UU16_t result;
+ 667   1        uint8_t intStatSave = IE_EA;         // Preserve state of global Interrupts
+ 668   1      
+ 669   1        IE_EA = 0;                            // Disable global interrupts
+ 670   1      //  EIE2 &= ~0x02;                      // Disable CAN interrupts
+ 671   1        payload = CanMsgObject[objNum];
+ 672   1      //  EIE2 |= 0x02;                       // Enable CAN interrupts
+ 673   1        IE_EA = intStatSave;                 // restore global interrupts
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 12  
+
+ 674   1        result.u8[0] = payload.u8[startIndex+1];
+ 675   1        result.u8[1] = payload.u8[startIndex];
+ 676   1        return result.s16;
+ 677   1      }
+ 678          
+ 679          
+ 680          //-----------------------------------------------------------------------------
+ 681          // Interrupt Service Routines
+ 682          //-----------------------------------------------------------------------------
+ 683          
+ 684          //-----------------------------------------------------------------------------
+ 685          // TIMER0_ISR
+ 686          //-----------------------------------------------------------------------------
+ 687          //
+ 688          // The ISR is triggered upon any CAN errors or upon a message reception
+ 689          //
+ 690          // If an error occurs, a global counter is updated
+ 691          //
+ 692          //-----------------------------------------------------------------------------
+ 693          
+ 694          SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
+ 695          {
+ 696   1         // Timer0 ISR pending flag is automatically cleared by vectoring to ISR
+ 697   1      
+ 698   1        SI_UU64_t DataBaguette;                // TempData to define CAN-Messages
+ 699   1        static uint16_t FirstRun = STARTUP_DELAY; //Skip at startup
+ 700   1        static uint8_t NumOfBat = 0;
+ 701   1      
+ 702   1        uint8_t TestBat1 = 0;
+ 703   1        uint8_t TestBat2 = 0;
+ 704   1        uint8_t TestBat3 = 0;
+ 705   1        uint8_t TestBat4 = 0;
+ 706   1      
+ 707   1      
+ 708   1      #if (SEND_DBG_COUNTER == 1)
+                static uint16_t DbgCounter = 0;
+              
+                DataBaguette.u16[0] = DbgCounter;
+                DataBaguette.u8[0] ^= DataBaguette.u8[1];    // Swap Bytes by XORing Step1
+                DataBaguette.u8[1] ^= DataBaguette.u8[0];    // Swap Bytes by XORing Step2
+                DataBaguette.u8[0] ^= DataBaguette.u8[1];    // Swap Bytes by XORing Step3
+                CANtransferMessageObj(SET_DEBUG_OUT, DataBaguette);
+                CANtriggerMessageObj(SET_DEBUG_OUT);      // Send the prepared Message-Objects to the CAN-Bus
+                DbgCounter++;
+              #endif
+ 719   1      
+ 720   1      
+ 721   1        if (FirstRun)
+ 722   1          {
+ 723   2            //comment if other client sends <reset all nodes>
+ 724   2            if (FirstRun == STARTUP_DELAY) // Do this only once before startup
+ 725   2              {
+ 726   3                DataBaguette.u8[0] = 0x00;    // Prepare CAN-Message <Reset all Nodes>
+ 727   3                DataBaguette.u8[1] = 0x81;
+ 728   3                CANtransferMessageObj(SET_BROADCAST, DataBaguette);
+ 729   3                CANtriggerMessageObj(SET_BROADCAST);      // Send the prepared Message-Objects to the CAN-Bus
+ 730   3            }
+ 731   2      
+ 732   2      
+ 733   2            if (FirstRun == (STARTUP_DELAY >> 2)) // Do this only once during startup
+ 734   2            {
+ 735   3                DataBaguette.u8[0] = 0x01;    // Prepare Message <Start All Nodes>
+ 736   3                DataBaguette.u8[1] = 0x00;
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 13  
+
+ 737   3                CANtransferMessageObj(SET_BROADCAST, DataBaguette);
+ 738   3                CANtriggerMessageObj(SET_BROADCAST);      // Send the prepared Message-Objects to the CAN-Bus
+ 739   3            }
+ 740   2      
+ 741   2      
+ 742   2            if (FirstRun == 1) // Do this only once after startup
+ 743   2            {
+ 744   3                DataBaguette.u8[0] = 0x00;    // Prepare CAN-Message <Startup>
+ 745   3                CANtransferMessageObj(SET_HEARTBEAT, DataBaguette);
+ 746   3                CANtriggerMessageObj(SET_HEARTBEAT);      // Send the prepared Message-Objects to the CAN-Bus
+ 747   3            }
+ 748   2      
+ 749   2            FirstRun--;
+ 750   2          }
+ 751   1        else
+ 752   1          {
+ 753   2      #if (SEND_HEARTBEAT == 1)
+ 754   2            DataBaguette.u8[0] = 0x05;    // Prepare CAN-Message <Heartbeat>
+ 755   2            CANtransferMessageObj(SET_HEARTBEAT, DataBaguette);
+ 756   2            CANtriggerMessageObj(SET_HEARTBEAT);      // Send the prepared Message-Objects to the CAN-Bus
+ 757   2      #endif
+ 758   2      
+ 759   2          }
+ 760   1      
+ 761   1        // Count the number of batteries after <first-run> phase
+ 762   1        TestBat1 = CANgetMessageInt(GET_BAT1_STATE, 0) & 0x01;
+ 763   1        TestBat2 = CANgetMessageInt(GET_BAT2_STATE, 0) & 0x01;
+ 764   1        TestBat3 = CANgetMessageInt(GET_BAT3_STATE, 0) & 0x01;
+ 765   1        TestBat4 = CANgetMessageInt(GET_BAT4_STATE, 0) & 0x01;
+ 766   1        NumOfBat = TestBat1 + TestBat2 + TestBat3 + TestBat4;
+ 767   1      
+ 768   1      
+ 769   1        DataBaguette.u32[0] = 0x00000000;
+ 770   1        DataBaguette.u32[1] = 0x00000000;
+ 771   1      
+ 772   1        if (NUM_OF_BATTERIES != 0)
+ 773   1          NumOfBat = NUM_OF_BATTERIES;
+ 774   1      
+ 775   1        if ((CANgetMessageInt(GET_BAT1_STATE, 0) & BMS_STATE_VALID_VALUES) +
+ 776   1            (CANgetMessageInt(GET_BAT2_STATE, 0) & BMS_STATE_VALID_VALUES) +
+ 777   1            (CANgetMessageInt(GET_BAT3_STATE, 0) & BMS_STATE_VALID_VALUES) +
+ 778   1            (CANgetMessageInt(GET_BAT4_STATE, 0) & BMS_STATE_VALID_VALUES) ==
+ 779   1            (BMS_STATE_VALID_VALUES * NumOfBat)) // Dynamic Num of Bat
+ 780   1       //     (BMS_STATE_VALID_VALUES * NUM_OF_BATTERIES)) // Static num of bat
+ 781   1          {
+ 782   2            LED = 0; //LED ON and Batteries ON
+ 783   2            DataBaguette.u8[0] = BAT_ON;
+ 784   2          }
+ 785   1        else
+ 786   1          {
+ 787   2            LED = 1; //LED OFF and all Batteries OFF
+ 788   2            DataBaguette.u8[0] = BAT_OFF;
+ 789   2          }
+ 790   1      
+ 791   1        if (TestBat1)
+ 792   1          {
+ 793   2            CANtransferMessageObj(SET_BAT1_STATE, DataBaguette);
+ 794   2            CANtriggerMessageObj(SET_BAT1_STATE);
+ 795   2          }
+ 796   1      
+ 797   1        if (TestBat2)
+ 798   1          {
+ 799   2            CANtransferMessageObj(SET_BAT2_STATE, DataBaguette);
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 14  
+
+ 800   2            CANtriggerMessageObj(SET_BAT2_STATE);
+ 801   2          }
+ 802   1      
+ 803   1        if (TestBat3)
+ 804   1          {
+ 805   2            CANtransferMessageObj(SET_BAT3_STATE, DataBaguette);
+ 806   2            CANtriggerMessageObj(SET_BAT3_STATE);
+ 807   2          }
+ 808   1      
+ 809   1        if (TestBat4)
+ 810   1          {
+ 811   2            CANtransferMessageObj(SET_BAT4_STATE, DataBaguette);
+ 812   2            CANtriggerMessageObj(SET_BAT4_STATE);
+ 813   2          }
+ 814   1      }
+ 815          
+ 816          
+ 817          //-----------------------------------------------------------------------------
+ 818          // CAN0_ISR
+ 819          //-----------------------------------------------------------------------------
+ 820          //
+ 821          // The ISR is triggered upon any CAN errors or upon a complete transmission
+ 822          //
+ 823          // If an error occurs, a global counter is updated
+ 824          //
+ 825          //-----------------------------------------------------------------------------
+ 826          
+ 827          SI_INTERRUPT(CAN0_ISR, CAN0_IRQn)
+ 828          {
+ 829   1         // SFRPAGE is set to CAN0_Page automatically when ISR starts
+ 830   1      
+ 831   1         uint8_t status = CAN0STAT;          // Read status, which clears the Status
+ 832   1                                             // Interrupt bit pending in CAN0IID
+ 833   1      
+ 834   1         uint8_t Interrupt_ID = CAN0IID;     // Read which message object caused
+ 835   1                                             // the interrupt
+ 836   1      
+ 837   1         CAN0IF1CM = 0x007F;                 // Read all of message object to IF1
+ 838   1                                             // Clear IntPnd and newData
+ 839   1      
+ 840   1      
+ 841   1         CAN0IF1CR = Interrupt_ID;           // Start command request to actually
+ 842   1                                             // clear the interrupt
+ 843   1      
+ 844   1         // Message Object 0 reports as 0x20 in the CAN0IID register, so
+ 845   1         // convert it to 0x00
+ 846   1         if (Interrupt_ID == 0x20)
+ 847   1         {
+ 848   2            Interrupt_ID = 0x00;
+ 849   2         }
+ 850   1      
+ 851   1      
+ 852   1         while (CAN0IF1CRH & 0x80) {}        // Poll on Busy bit
+ 853   1      
+ 854   1         if (status & (TxOk | RxOk))                  // If transmit completed successfully
+ 855   1         {
+ 856   2            // Set variable to indicate this message object's transfer completed
+ 857   2      
+ 858   2      
+ 859   2            // Bit-shifting doesn't work with an operator greater than 15, so
+ 860   2            // account for it
+ 861   2            if (Interrupt_ID <= 15)
+ 862   2            {
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 15  
+
+ 863   3                    CAN_RXTX_COMPLETE.u32 |= (uint16_t) (0x01 << Interrupt_ID);
+ 864   3            }
+ 865   2            else if (Interrupt_ID <= 0x1F)
+ 866   2            {
+ 867   3               CAN_RXTX_COMPLETE.u16[MSB] |= (uint16_t) (0x01 << (Interrupt_ID - 16));
+ 868   3            }
+ 869   2         }
+ 870   1      
+ 871   1         //if ((status & RxOk) && (Interrupt_ID != 0))
+ 872   1      
+ 873   1         if (status & RxOk)                  // If transmit completed successfully
+ 874   1         {
+ 875   2             // Read all 8 data bytes to rxdata, even though they might not be valid
+ 876   2      
+ 877   2             CanMsgObject[Interrupt_ID].u8[0] = CAN0IF1DA1L;    // First pair of bytes
+ 878   2             CanMsgObject[Interrupt_ID].u8[1] = CAN0IF1DA1H;    // First pair of bytes
+ 879   2             CanMsgObject[Interrupt_ID].u8[2] = CAN0IF1DA2L;    // Second pair of bytes
+ 880   2             CanMsgObject[Interrupt_ID].u8[3] = CAN0IF1DA2H;    // Second pair of bytes
+ 881   2             CanMsgObject[Interrupt_ID].u8[4] = CAN0IF1DB1L;    // Third pair of bytes
+ 882   2             CanMsgObject[Interrupt_ID].u8[5] = CAN0IF1DB1H;    // Third pair of bytes
+ 883   2             CanMsgObject[Interrupt_ID].u8[6] = CAN0IF1DB2L;    // Fourth and last pair of bytes
+ 884   2             CanMsgObject[Interrupt_ID].u8[7] = CAN0IF1DB2H;    // Fourth and last pair of bytes
+ 885   2             CanMsgId[Interrupt_ID] = CAN0IF1A2;
+ 886   2      
+ 887   2         }
+ 888   1      
+ 889   1      
+ 890   1      
+ 891   1      
+ 892   1         // If an error occurred, simply update the global variable and continue
+ 893   1         if (status & LEC)
+ 894   1         {
+ 895   2             // The LEC bits identify the type of error, but those are grouped here
+ 896   2            if ((status & LEC) != 0x07)
+ 897   2            {
+ 898   3                CAN_ERROR = 1;
+ 899   3            }
+ 900   2         }
+ 901   1      
+ 902   1         if (status & BOff)
+ 903   1         {
+ 904   2            CAN_ERROR = 1;
+ 905   2         }
+ 906   1      
+ 907   1         if (status & EWarn)
+ 908   1         {
+ 909   2            CAN_ERROR = 1;
+ 910   2         }
+ 911   1      
+ 912   1         // Old SFRPAGE is popped off the SFR stack when ISR exits
+ 913   1      }
+ 914          
+ 915          //-----------------------------------------------------------------------------
+ 916          // End Of File
+ 917          //-----------------------------------------------------------------------------
+ 918          
+*** WARNING C294 IN LINE 773 OF D:\Work\CAN-ALL\Can-All\CAN_ALL_CanObjectDispatcherV5\src\main_CAN_ALL.c: unreachable co
+             -de
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2128    ----
+   CONSTANT SIZE    =   ----    ----
+C51 COMPILER V9.60.0.0   MAIN_CAN_ALL                                                      04/17/2022 13:10:11 PAGE 16  
+
+   XDATA SIZE       =    540      57
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)
