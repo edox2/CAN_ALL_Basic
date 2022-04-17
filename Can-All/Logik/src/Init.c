@@ -20,6 +20,7 @@
 #include "SI_C8051F550_Defs.h"
 #include "../inc/Common.h"
 #include "../inc/Init.h"
+#include "../inc/Can.h"
 //#include "../inc/Pins.h"
 //#include "../inc/Serial.h"
 
@@ -106,8 +107,8 @@ void SYSCLK_Init (void)
 //
 //    CLKSEL    = 0x03;                  // enable CLKMUL as sysclk
   //internal osc @ 24MHz
-  SFRPAGE   = CONFIG_PAGE;
-  OSCICN    = 0xC7;
+//  SFRPAGE   = CONFIG_PAGE;
+//  OSCICN    = 0xC7;
 //  SFRPAGE   = ACTIVE_PAGE;
 }
 
@@ -115,14 +116,14 @@ void SYSCLK_Init (void)
 //-----------------------------------------------------------------------------
 void PORT_Init (void)
 {
-
+/*
   // P0.0  -  C-Port,  Open-Drain, Digital
   // P0.1  -  DIA_EN,  Push-Pull,  Digital
   // P0.2  -  SEL1,  Push-Pull,  Digital
   // P0.3  -  SEL2,  Push-Pull,  Digital
   // P0.4  -  UART_TX (UART0), Open-Drain, Digital
   // P0.5  -  UART_RX (UART0), Open-Drain, Digital
-  // P0.6  -  CAN_TX (CAN0), Open-Drain, Digital
+  // P0.6  -  CAN_TX (CAN0), push-pull, Digital
   // P0.7  -  CAN_RX (CAN0), Open-Drain, Digital
 
   // P1.0  -  SNS-A,  Open-Drain, Analog
@@ -136,7 +137,7 @@ void PORT_Init (void)
 
   // P2.0  -  B-Port,  Open-Drain, Digital
   // P2.1  -  C2D,  Open-Drain, Digital
-
+*/
   uint8_t SFRPAGE_save = SFRPAGE;
   SFRPAGE = CONFIG_PAGE;
 //  //todo debug config (ADC)
@@ -150,10 +151,10 @@ void PORT_Init (void)
   //todo original config
   SFRPAGE   = CONFIG_PAGE;
   P1MDIN    = 0xFC;
-  P0MDOUT   = 0x0E;
-  P1MDOUT   = 0x1C;
-  XBR0      = 0x03;
-  XBR2      = 0x40;
+  P0MDOUT   = 0x4E; // PP for 0.2, 0.3, 0.6,
+  P1MDOUT   = 0x1C; // PP for 1.2, 1.3, 1.4
+  XBR0      = 0x02; // Enable CAN0 on Crossbar todo: might also be 0x05 (used to be 0x03 | 0x02 for CAN)
+  XBR2      = 0x40; // Enable Crossbar and weak pull-ups
   SFRPAGE   = SFRPAGE_save;
 }
 //-----------------------------------------------------------------------------
@@ -221,7 +222,7 @@ void UART0_Init(void)
 
 
 //-----------------------------------------------------------------------------
-// Timer0_Init   8-bit autoreload at 1 us
+// Timer0_Init
 //-----------------------------------------------------------------------------
 //
 // Return Value : None
@@ -232,14 +233,25 @@ void UART0_Init(void)
 //-----------------------------------------------------------------------------
 void Timer0_Init (void)
 {
+  // No need to set SFRPAGE as all registers accessed in this function
+  // are available on all pages
+
    TCON &= ~0x30;                      // Stop timer and clear flags
-   TMOD &= ~0x0F;                      // set mode to 8-bit autoreload
-   TMOD |=  0x02;
+   //todo: setting for ADC, has to be changed for CAN ->check ADC function
+   //   TMOD &= ~0x0F;                      // set mode to 8-bit autoreload
+   //   TMOD |=  0x02;
 
+
+//   TH0 = (U8) -(SYSCLK / 1000000);     // set to reload at 1 us interval
+//   TL0 = TH0;
+   TH0 = TIMER0_RL_HIGH;               // Init Timer0 High register
+   TL0 = TIMER0_RL_LOW;                // Init Timer0 Low register
+
+   TMOD  = 0x01;                       // Timer0 in 16-bit mode
+   CKCON = 0x02;                       // Timer0 uses a 1:48 prescaler
    CKCON |= 0x04;                      // Timer counts SYSCLKs
-
-   TH0 = (U8) -(SYSCLK / 1000000);     // set to reload at 1 us interval
-   TL0 = TH0;
+   IE_ET0 = 1;                         // Timer0 interrupt enabled
+   TCON  = 0x10;                       // Timer0 ON
 
    IE_ET0 = 0;                            // interrupts disabled ben: used to be ET0= = 1
 
@@ -299,8 +311,7 @@ void OSCILLATOR_Init (void)
    uint8_t SFRPAGE_save = SFRPAGE;
    SFRPAGE = CONFIG_PAGE;
 
-   OSCICN = 0xC4;                      // Configure internal oscillator for
-                                       // 24 MHz / 8
+   OSCICN = 0x87;                      // Set internal oscillator divider to 1
 
    SFRPAGE = LEGACY_PAGE;
 
@@ -309,10 +320,227 @@ void OSCILLATOR_Init (void)
    SFRPAGE = SFRPAGE_save;
 }
 
-
-void CAN_Init(int canNode)
+//-----------------------------------------------------------------------------
+// CAN_Init
+//-----------------------------------------------------------------------------
+//
+// Return Value : None
+// Parameters   : None
+//
+// This function initializes the CAN peripheral and message objects
+//
+// CAN Bit Clock : 500kbps
+// Auto Retransmit : Automatic Retransmission is enabled
+// MsgVal        : Set to Valid based on the #define MESSAGE_OBJECTS
+// Filtering     : Enabled for all valid message objects
+// Message Identifier : 11-bit standard; Each message object is only used by
+//                      one message ID
+// Direction     : One buffer each is configured for transmit and receive
+// End of Buffer : All message objects are treated as separate buffers
+//
+// The following interrupts are enabled and are handled by CAN0_ISR
+//
+// Error Interrupts
+// Status Change Interrupt
+// Receive Interrupt
+// Transmit Interrupt
+//-----------------------------------------------------------------------------
+void CANinit (void)
 {
-  //todo
+   uint8_t i;
+
+   uint8_t SFRPAGE_save = SFRPAGE;
+   SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+
+   CAN0CN |= 0x01;                     // Start Initialization mode
+
+   //---------Initialize general CAN peripheral settings
+
+   CAN0CN |= 0x4E;                     // Enable Error and Module Interrupts
+                                       // Enable access to bit timing register
+
+   // See the CAN Bit Timing Spreadsheet for how to calculate this value
+   CAN0BT = 0x1C02;                    // Based on 24 MHz CAN clock, set the
+                                       // CAN bit rate to 500kbps
+
+
+   //---------Initialize settings common to all message objects
+
+   // Command Mask Register
+   CAN0IF1CM = 0x00F0;                 // Write Operation
+                                       // Transfer ID Mask, MDir, MXtd
+                                       // Transfer ID, Dir, Xtd, MsgVal
+                                       // Transfer Control Bits
+                                       // Don't set TxRqst or transfer data
+
+   // Mask Registers
+   CAN0IF1M1 = 0x0000;                 // Mask Bits 15-0 not used for filtering
+   CAN0IF1M2 = 0x5FFC;                 // Ignore Extended Identifier for
+                                       // filtering
+                                       // Used Direction bit for filtering
+                                       // Use ID bits 28-18 for filtering
+
+   // Arbitration Registers
+   CAN0IF1A1 = 0x0000;                 // 11-bit ID, so lower 16-bits not used
+
+
+   //---------Initialize settings for each valid message object
+
+   for (i = 0; i < MESSAGE_OBJECTS; i++) // 0 denotes MsgObject 32!
+   {
+
+       if (MessageBoxInUse[i])
+         {
+           if (MessageBoxDirTx[i])
+            {
+              // Message Control Registers
+    //          CAN0IF1MC = 0x0880 | MessageBoxSize[i];  // Enable Transmit Interrupt
+              CAN0IF1MC = 0x0080 | MessageBoxSize[i];  // Disable Transmit Interrupt
+                                                  // Message Object is a Single Message
+                                                  // Message Size set by #define
+
+              CAN0IF1A2 = 0xA000 | (MessageBoxCanId[i] << 2);  // Set MsgVal to valid
+                                               // Set Direction to write
+                                               // Set 11-bit Identifier
+            }
+          else
+            {
+              CAN0IF1MC = 0x1480 | MessageBoxSize[i];  // Enable Receive Interrupt
+                                                  // Message Object is a Single Message
+                                                  // Message Size set by #define
+
+              // Arbitration Registers
+              CAN0IF1A2 = 0x8000 | (MessageBoxCanId[i] << 2);  // Set MsgVal to valid
+                                                     // Set Object Direction to read
+                                                     // Set 11-bit Identifier
+            }
+         }
+       else
+         {
+           // Set remaining message objects to be Ignored
+           CAN0IF1A2 = 0x0000;              // Set MsgVal to 0 to Ignore
+           CAN0IF1CR = i;                // Start command request
+
+         }
+      CAN0IF1CR = i;                // Start command request
+      while (CAN0IF1CRH & 0x80);       // Poll on Busy bit
+   }
+   //--------- CAN initialization is complete
+
+   CAN0CN &= ~0x41;                    // Return to Normal Mode and disable
+                                       // access to bit timing register
+
+   EIE2 |= 0x02;                       // Enable CAN interrupts
+
+   SFRPAGE = SFRPAGE_save;
+}
+
+//-----------------------------------------------------------------------------
+// Supporting Subroutines
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// CANsetupMessageObj
+//-----------------------------------------------------------------------------
+//
+// Return Value : None
+// Parameters   : uint8_t obj_num - message object number to send data
+//                             range is 0x01 - 0x20
+//              : SI_UU64_t payload - CAN message to send (8 Bytes)
+//
+//
+// Send data using the message object and payload passed as the parameters.
+//
+//-----------------------------------------------------------------------------
+
+void CAN_Init (void)
+{
+   uint8_t i;
+
+   uint8_t SFRPAGE_save = SFRPAGE;
+   SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+
+   CAN0CN |= 0x01;                     // Start Initialization mode
+
+   //---------Initialize general CAN peripheral settings
+
+   CAN0CN |= 0x4E;                     // Enable Error and Module Interrupts
+                                       // Enable access to bit timing register
+
+   // See the CAN Bit Timing Spreadsheet for how to calculate this value
+   CAN0BT = 0x1C02;                    // Based on 24 MHz CAN clock, set the
+                                       // CAN bit rate to 500kbps
+
+
+   //---------Initialize settings common to all message objects
+
+   // Command Mask Register
+   CAN0IF1CM = 0x00F0;                 // Write Operation
+                                       // Transfer ID Mask, MDir, MXtd
+                                       // Transfer ID, Dir, Xtd, MsgVal
+                                       // Transfer Control Bits
+                                       // Don't set TxRqst or transfer data
+
+   // Mask Registers
+   CAN0IF1M1 = 0x0000;                 // Mask Bits 15-0 not used for filtering
+   CAN0IF1M2 = 0x5FFC;                 // Ignore Extended Identifier for
+                                       // filtering
+                                       // Used Direction bit for filtering
+                                       // Use ID bits 28-18 for filtering
+
+   // Arbitration Registers
+   CAN0IF1A1 = 0x0000;                 // 11-bit ID, so lower 16-bits not used
+
+
+   //---------Initialize settings for each valid message object
+
+   for (i = 0; i < MESSAGE_OBJECTS; i++) // 0 denotes MsgObject 32!
+   {
+
+       if (MessageBoxInUse[i])
+         {
+           if (MessageBoxDirTx[i])
+            {
+              // Message Control Registers
+    //          CAN0IF1MC = 0x0880 | MessageBoxSize[i];  // Enable Transmit Interrupt
+              CAN0IF1MC = 0x0080 | MessageBoxSize[i];  // Disable Transmit Interrupt
+                                                  // Message Object is a Single Message
+                                                  // Message Size set by #define
+
+              CAN0IF1A2 = 0xA000 | (MessageBoxCanId[i] << 2);  // Set MsgVal to valid
+                                               // Set Direction to write
+                                               // Set 11-bit Identifier
+            }
+          else
+            {
+              CAN0IF1MC = 0x1480 | MessageBoxSize[i];  // Enable Receive Interrupt
+                                                  // Message Object is a Single Message
+                                                  // Message Size set by #define
+
+              // Arbitration Registers
+              CAN0IF1A2 = 0x8000 | (MessageBoxCanId[i] << 2);  // Set MsgVal to valid
+                                                     // Set Object Direction to read
+                                                     // Set 11-bit Identifier
+            }
+         }
+       else
+         {
+           // Set remaining message objects to be Ignored
+           CAN0IF1A2 = 0x0000;              // Set MsgVal to 0 to Ignore
+           CAN0IF1CR = i;                // Start command request
+
+         }
+      CAN0IF1CR = i;                // Start command request
+      while (CAN0IF1CRH & 0x80);       // Poll on Busy bit
+   }
+   //--------- CAN initialization is complete
+
+   CAN0CN &= ~0x41;                    // Return to Normal Mode and disable
+                                       // access to bit timing register
+
+   EIE2 |= 0x02;                       // Enable CAN interrupts
+
+   SFRPAGE = SFRPAGE_save;
 }
 
 //-----------------------------------------------------------------------------
