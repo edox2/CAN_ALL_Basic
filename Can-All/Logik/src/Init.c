@@ -140,20 +140,12 @@ void PORT_Init (void)
 */
   uint8_t SFRPAGE_save = SFRPAGE;
   SFRPAGE = CONFIG_PAGE;
-//  //todo debug config (ADC)
-//  SFRPAGE   = CONFIG_PAGE;
-//  P0MDIN    = 0xFE;
-//  P1MDIN    = 0x7C;
-//  P2MDIN    = 0xFE;
-//  XBR0      = 0x03;
-//  XBR2      = 0x40;
 
-  //todo original config
   SFRPAGE   = CONFIG_PAGE;
   P1MDIN    = 0xFC;
   P0MDOUT   = 0x4E; // PP for 0.2, 0.3, 0.6,
   P1MDOUT   = 0x1C; // PP for 1.2, 1.3, 1.4
-  XBR0      = 0x02; // Enable CAN0 on Crossbar todo: might also be 0x05 (used to be 0x03 | 0x02 for CAN)
+  XBR0      = 0x02; // Enable CAN0 on Crossbar todo merge: might also be 0x05 (used to be 0x03 | 0x02 for CAN)
   XBR2      = 0x40; // Enable Crossbar and weak pull-ups
   SFRPAGE   = SFRPAGE_save;
 }
@@ -237,13 +229,16 @@ void Timer0_Init (void)
   // are available on all pages
 
    TCON &= ~0x30;                      // Stop timer and clear flags
-   //todo: setting for ADC, has to be changed for CAN ->check ADC function
+   //todo merge: setting for ADC, has to be changed for CAN ->check if ADC still works
+   /*ADC config
    //   TMOD &= ~0x0F;                      // set mode to 8-bit autoreload
    //   TMOD |=  0x02;
 
 
 //   TH0 = (U8) -(SYSCLK / 1000000);     // set to reload at 1 us interval
 //   TL0 = TH0;
+ */
+   //CAN config
    TH0 = TIMER0_RL_HIGH;               // Init Timer0 High register
    TL0 = TIMER0_RL_LOW;                // Init Timer0 Low register
 

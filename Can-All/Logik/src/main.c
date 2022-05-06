@@ -40,11 +40,11 @@
 // Global CONSTANTS
 //-----------------------------------------------------------------------------
 
-#define VACUUM_MIN                100   // [mBar] disable vacuum pump at this level todo: defnie more accurate
-#define VACUUM_MAX                300   // [mBar] enable vacuum pump at this level todo: defnie more accurate
-#define INVERTER_TEMPERATURE_MAX  95    // [°C] Maximal inverter Temperature -> shut down todo: defnie more accurate
-#define INVERTER_TEMPERATURE_WARN 65    // [°C] Temperature to start cooling todo: defnie more accurate
-#define INVERTER_TEMPERATURE_MIN  45    // [°C] Temperature to stop cooling todo: defnie more accurate
+#define VACUUM_MIN                100   // [mBar] disable vacuum pump at this level todo ben: defnie more accurate
+#define VACUUM_MAX                300   // [mBar] enable vacuum pump at this level todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_MAX  95    // [°C] Maximal inverter Temperature -> shut down todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_WARN 65    // [°C] Temperature to start cooling todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_MIN  45    // [°C] Temperature to stop cooling todo ben: defnie more accurate
 #define VREF                      2200  // [mV] ADC Voltage Reference
 #define HSS_TEMPERATURE_FACTOR    0.012 // [°C/mV]
 #define HSS_TEMPERATURE_OFFSET    -500  // [mV] 0°C @ 0.5V @ V_out
@@ -168,7 +168,7 @@ void main (void)
    error = NO_ERROR;
    SFRPAGE = LEGACY_PAGE;              // Set SFR Page for PCA0MD
 
-   //todo: define what hapens on ignition level 1 and ignition level 2
+   //todo error: define what hapens on ignition level 1 and ignition level 2
    // Init board auxillary's
    CURRENT_STATE = INIT;  // todo: probably ignition state 1 (VK+ enabled)
    error += doInit();
@@ -176,7 +176,7 @@ void main (void)
 
    if(error > 0)
      {
-       // todo: init failed, what now?
+       // todo error: init failed, what now?
      }
 
    // startup
@@ -244,7 +244,7 @@ void main (void)
        }
      else if (error>0)
        {
-         //todo: define error handling
+         //todo error: define error handling
        }
 
    }                                   // end of while(1) todo: will run out if error state is reached -> define proceeding (cycle ignition?)
@@ -290,7 +290,7 @@ long checkBoard(void)
     {
       error = BOARD_HSS_B_ERROR;
     }
-  //todo maybe check CAN
+  //todo can maybe check CAN
   //todo different stuff?
 
   return error;
@@ -351,7 +351,7 @@ int getHighSideSwitchACurrent_mA()
 
   SetHSSDiagnostics();
 
-  error += getAdcReading(P1_0, &adcReading);  //todo: error handling
+  error += getAdcReading(P1_0, &adcReading);  //todo error: error handling
 
   return adcReading*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
 }
@@ -363,7 +363,7 @@ int getHighSideSwitchBCurrent_mA()
 
   SetHSSDiagnostics();
 
-  error += getAdcReading(P1_1, &adcReading);  //todo: error handling
+  error += getAdcReading(P1_1, &adcReading);  //todo error: error handling
 
   return adcReading*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
 }
@@ -401,12 +401,12 @@ long DoMainStartup(void)
 {
   long error = NO_ERROR;
 
-  //todo(CAN) check inverter state
+  //todo CAN check inverter state
 
   // check interlock loop
   if(C_Port == HIGH)
     {
-      //todo interlock loop is wired, should be LOW -> wiring problem?
+      //todo error interlock loop is wired, should be LOW -> wiring problem?
     }
   EN_B = HIGH;  //enable Interlock Relais (close interlock loop)
   if(C_Port == LOW)
@@ -415,9 +415,9 @@ long DoMainStartup(void)
         return BOARD_INTERLOCK_ERROR; //One of the Battery's is missing -> abord
       }
 
-  //todo(CAN) enable battery's
-  //todo(CAN) check inverter (every thing should be OK)
-  //todo(CAN) check BENDER
+  //todo CAN enable battery's
+  //todo CAN check inverter (every thing should be OK)
+  //todo CAN check BENDER
 
   return error;
 }
@@ -435,7 +435,7 @@ long DoPumpStartup(void)
 //  enable Vacuum Pump
   EN_A = HIGH;
 
-//  Wait_ms((U16) 500); //todo: does not work (probably due to U16 noatation)
+  Wait_ms((U16) 500); //todo sigi: does not work (TFms flag gets never set -> timer/interrupt not initialized)
 
   if(getHighSideSwitchACurrent_mA() < 100)  //check if Pump is running
   {
@@ -469,7 +469,7 @@ long DoPumpStartup(void)
   }
 
 
-  //todo(CAN) get inverter temperature (error if not working)
+  //todo CAN get inverter temperature (error if not working)
 
   if(error == NO_ERROR) //Board seams OK, signal accordingly
   {
@@ -483,7 +483,7 @@ long DoRevHeatStartup(void)
 {
   long error = NO_ERROR;
 
-  //todo: set internal PullUp of B_Port (P2.0)
+  //todo ben: set internal PullUp of B_Port (P2.0)
 
   if(B_PORT == HIGH)  //check Heater Melting Fuse
     {
@@ -496,19 +496,19 @@ long DoRunMain(void)
 {
   long error = NO_ERROR;
   int inverterTemperature = 0;
-  //todo(CAN): check invertor state
-  //todo(CAN): check invertor temperature
+  //todo CAN: check invertor state
+  //todo CAN: check invertor temperature
   if(inverterTemperature > INVERTER_TEMPERATURE_MAX)
     {
       error += INVERTER_ERROR_TEMPERATURE;
     }
-  //todo(CAN): battery state
-  //todo(CAN): check bender error/warning (error += BENDER_ERROR_ERROR)
+  //todo CAN: battery state
+  //todo CAN: check bender error/warning (error += BENDER_ERROR_ERROR)
 
 
   // check GPIO state's
   //Bender Error
-  if(A_PORT != HIGH)  //todo check if HIGH signals error alternative: check by todo(CAN)
+  if(A_PORT != HIGH)  //todo ben check if HIGH signals error alternative: check by todo CAN
     {
       CURRENT_STATE = WAIT;
     }
@@ -539,7 +539,7 @@ long DoRunPump(void)
 
   if(error != NO_ERROR)
     {
-      //todo: refine error handling (maybe pump should turn on)
+      //todo error: refine error handling (maybe pump should turn on)
       return error;
     }
 
@@ -553,8 +553,8 @@ long DoRunPump(void)
       EN_A = LOW;
     }
 
-  //todo(CAN) get inverter temperature -> inverterTemperature
-  //todo(CAN) is it possible for main controller and pumpBoard to ask the invertor about the temperature(probably ok)?
+  //todo CAN get inverter temperature -> inverterTemperature
+  //todo CAN is it possible for main controller and pumpBoard to ask the invertor about the temperature(probably ok)?
   if(inverterTemperature > INVERTER_TEMPERATURE_MAX)
     {
       EN_A = HIGH;
@@ -574,7 +574,7 @@ long DoRunRevHeater(void)
   long error = NO_ERROR;
 
   //do reverse light logic
-//  if(A_PORT != C_PORT)  //todo: get State of C-Port
+//  if(A_PORT != C_PORT)  //todo ben: get State of C-Port
   if(A_PORT != HIGH)
     {
       EN_B = HIGH;
@@ -600,7 +600,7 @@ long DoRunRevHeater(void)
 
 void DoMainError(void)
 {
-  //todo(CAN): shutdown battery's
+  //todo CAN: shutdown battery's
   }
 void DoPumpError(void)
 {
@@ -612,8 +612,6 @@ void DoRevHeaterError(void)
 //returns the DAC0 reading of the given pin(HEX)
 long getAdcReading(int pin, double *value) //todo: make work
 {
-  //todo: uint*_t is not recognized
-
   int adcReading = 0;
 
   //---------------------------
@@ -647,7 +645,6 @@ long getAdcReading(int pin, double *value) //todo: make work
 
   accumulator = accumulator >> 8;     // 8-bit shift to go from 24 to 16 bits
 
-//  *value = (uint16_t) (((uint32_t) accumulator * (uint32_t) VREF) / (uint32_t) 65536);
   *value = (uint16_t) (((double) accumulator * (double) VREF) / (double) 65536);
 
   // Note that the numbers were rounded when equation was solved.
@@ -668,7 +665,7 @@ long getPressureReading_mbar(int *value)
   long error = NO_ERROR;
 
   //Vacuum Sensor 0kPa @ 0.5V, -100kPa @ 4.5V
-  error += getAdcReading(P1_7, &vacuumSensorReading); //todo: dont understand warning
+  error += getAdcReading(P1_7, &vacuumSensorReading);
 
   //calculate pressure [mBar], based on 101kPa (athmosperic pressure @ 0müm)
 //  *value = 101 - (int)(vacuumSensorReading*VacuumFactor+VacuumOffset);

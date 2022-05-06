@@ -21,16 +21,11 @@
 // Function Prototypes
 //-----------------------------------------------------------------------------
 
-void OSCILLATOR_Init (void);
-void PORT_Init (void);
-void TIMER0_Init(void);
-
 void CANsetupMessageObj(uint8_t objNum, uint16_t canId, uint8_t dirTx,  uint8_t len, SI_UU64_t payload);
 void CANtransferMessageObj(uint8_t objNum, SI_UU64_t payload);
 void CANtriggerMessageObj(uint8_t objNum);
 SI_UU64_t CANgetMessageObjPayload(uint8_t objNum);
 int16_t CANgetMessageInt(uint8_t objNum, uint8_t startIndex);
-//SI_UU64_t CANgetMessageObj(uint8_t objNum, uint16_t *canId, uint8_t *dirTx,  uint8_t *len, SI_UU64_t payload);
 
 SI_INTERRUPT_PROTO(CAN0_ISR, INTERRUPT_CAN0);
 SI_INTERRUPT_PROTO(TIMER0_ISR, INTERRUPT_TIMER0);
@@ -52,7 +47,6 @@ SI_UU64_t LastBroadcastMsg;                // TempData to define CAN-Messages
 
 
 uint8_t DebugInput = 0;
-//uint16_t MotorRpm;
 uint16_t Battery1SoC;
 uint16_t Battery1SoH;
 uint16_t Battery2SoC;
