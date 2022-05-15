@@ -40,27 +40,27 @@
 // Global CONSTANTS
 //-----------------------------------------------------------------------------
 
-#define VACUUM_MIN                100   // [mBar] disable vacuum pump at this level todo ben: defnie more accurate
-#define VACUUM_MAX                300   // [mBar] enable vacuum pump at this level todo ben: defnie more accurate
-#define INVERTER_TEMPERATURE_MAX  95    // [°C] Maximal inverter Temperature -> shut down todo ben: defnie more accurate
-#define INVERTER_TEMPERATURE_WARN 65    // [°C] Temperature to start cooling todo ben: defnie more accurate
-#define INVERTER_TEMPERATURE_MIN  45    // [°C] Temperature to stop cooling todo ben: defnie more accurate
-#define VREF                      2200  // [mV] ADC Voltage Reference
-#define HSS_TEMPERATURE_FACTOR    0.012 // [°C/mV]
-#define HSS_TEMPERATURE_OFFSET    -500  // [mV] 0°C @ 0.5V @ V_out
-#define HSS_CURRENT_FACTOR        0.225 // [A/mV]
-#define HSS_CURRENT_OFFSET        0     // [mV]
-#define HSS_VOLTAGE_FACTOR        0.085 // [V/mV]
-#define HSS_VOLTAGE_OFFSET        0     // [mV]
-#define VACUUM_FACTOR             0.25  // [mBar/mV]
-#define VACUUM_OFFSET             -500  // [mV] 0hpa @ 0.5V V_out
+#define VACUUM_MIN                100.0   // [mBar] disable vacuum pump at this level todo ben: defnie more accurate
+#define VACUUM_MAX                300.0   // [mBar] enable vacuum pump at this level todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_MAX  95.0    // [°C] Maximal inverter Temperature -> shut down todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_WARN 65.0    // [°C] Temperature to start cooling todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_MIN  45.0    // [°C] Temperature to stop cooling todo ben: defnie more accurate
+#define VREF                      2200.0  // [mV] ADC Voltage Reference
+#define HSS_TEMPERATURE_FACTOR    0.012   // [°C/mV]
+#define HSS_TEMPERATURE_OFFSET    -500.0  // [mV] 0°C @ 0.5V @ V_out
+#define HSS_CURRENT_FACTOR        0.225   // [A/mV]
+#define HSS_CURRENT_OFFSET        0.0     // [mV]
+#define HSS_VOLTAGE_FACTOR        0.085   // [V/mV]
+#define HSS_VOLTAGE_OFFSET        0.0     // [mV]
+#define VACUUM_FACTOR             0.25    // [mBar/mV]
+#define VACUUM_OFFSET             -500.0  // [mV] 0hpa @ 0.5V V_out
 //-----------------------------------------------------------------------------
 // Includes
 //-----------------------------------------------------------------------------
 
 #include <SI_C8051F550_Defs.h>
 #include <SI_C8051F550_Register_Enums.h>
-#include <stdint.h>
+#include "stdint.h"
 #include "../inc/Init.h"
 #include "../inc/HighSideSwitch.h"
 #include "../inc/compiler_defs.h"
@@ -84,8 +84,8 @@ long DoRevHeatStartup(void);
 long DoRunMain(void);
 long DoRunPump(void);
 long DoRunRevHeater(void);
-int getOwnCanNode(void);
-long getAdcReading(int pin, int *adc_value);
+uint16_t getAdcReading_single(uint8_t pin);
+long getAdcReading_HighRes(int pin, float *adc_value);
 long getPressureReading_mbar(int *value);
 void DoMainError(void);
 void DoPumpError(void);
@@ -261,7 +261,7 @@ long doInit(void)
   Timer0_Init ();
   PCA0_Init ();
   OSCILLATOR_Init ();       // Initialize Oscillator
-  CAN_Init(getOwnCanNode);
+  CAN_Init();
   highSide_Init();
   ADC0_Init();
 
@@ -317,12 +317,12 @@ long getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Swi
   {
     //todo Calculate Value according to I_Sens
       //getAdcReading()
-      Switch_A->current = getAdcReading(P1_0, &adcReading)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
+      Switch_A->current = (float)getAdcReading_single(P1_0)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
   }
   if(EN_B)
   {
       //todo Calculate Value according to I_Sens
-      Switch_B->current = getAdcReading(P1_1, &adcReading)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
+      Switch_B->current = (float)getAdcReading_single(P1_1)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
   }
 
   //Check output Voltage
@@ -330,16 +330,16 @@ long getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Swi
   SEL2 = HIGH;
 
   //todo Calculate Value according to I_Sens
-  Switch_A->voltage = getAdcReading(P1_0, &adcReading)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
-  Switch_B->voltage = getAdcReading(P1_1, &adcReading)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
+  Switch_A->voltage = (float)getAdcReading_single(P1_0)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
+  Switch_B->voltage = (float)getAdcReading_single(P1_1)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
 
   //Check Temperature
   SEL1 = HIGH;
   SEL2 = LOW;
 
   //todo Calculate Value according to I_Sens
-  Switch_A->temperature = getAdcReading(P1_0, &adcReading)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
-  Switch_B->temperature = getAdcReading(P1_1, &adcReading)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
+  Switch_A->temperature = (float)getAdcReading_single(P1_0)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
+  Switch_B->temperature = (float)getAdcReading_single(P1_1)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
 
   return NO_ERROR;
 }
@@ -351,9 +351,7 @@ int getHighSideSwitchACurrent_mA()
 
   SetHSSDiagnostics();
 
-  error += getAdcReading(P1_0, &adcReading);  //todo error: error handling
-
-  return adcReading*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
+  return getAdcReading_single(P1_0)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
 }
 
 int getHighSideSwitchBCurrent_mA()
@@ -363,9 +361,7 @@ int getHighSideSwitchBCurrent_mA()
 
   SetHSSDiagnostics();
 
-  error += getAdcReading(P1_1, &adcReading);  //todo error: error handling
-
-  return adcReading*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
+  return getAdcReading_single(P1_1)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
 }
 
 void SetHSSDiagnostics()
@@ -662,15 +658,12 @@ long getAdcReading_HighRes(int pin, float *value) //todo: make work
 // calculate and return the pressure measured by the pressure sensor
 long getPressureReading_mbar(int *value)
 {
-  double vacuumSensorReading;
-  long error = NO_ERROR;
+ long error = NO_ERROR;
 
   //Vacuum Sensor 0kPa @ 0.5V, -100kPa @ 4.5V
-  error += getAdcReading(P1_7, &vacuumSensorReading);
-
   //calculate pressure [mBar], based on 101kPa (athmosperic pressure @ 0müm)
 //  *value = 101 - (int)(vacuumSensorReading*VacuumFactor+VacuumOffset);
-  *value = (int)(vacuumSensorReading*VACUUM_FACTOR+VACUUM_OFFSET);
+  *value = (int)(getAdcReading_single(P1_7)*VACUUM_FACTOR+VACUUM_OFFSET);
 
   return error;
 }

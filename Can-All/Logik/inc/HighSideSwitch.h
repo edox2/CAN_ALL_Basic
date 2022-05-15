@@ -4,14 +4,15 @@
  *  Created on: 13.03.2022
  *      Author: benja
  */
-
 #ifndef INC_HIGHSIDESWITCH_H_
 #define INC_HIGHSIDESWITCH_H_
 
+#include "stdint.h"
+
 typedef struct {
-  int current;
-  int voltage;
-  int temperature;
+  int16_t current;
+  uint16_t voltage;
+  uint16_t temperature;
 } HighSideSwitchData;
 
 
