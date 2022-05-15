@@ -12,6 +12,11 @@
 
 #include "compiler_defs.h"
 #include "SI_C8051F550_Defs.h"
+//#include "../inc/compiler_defs.h"
+#include <SI_C8051F550_Register_Enums.h>
+#include "../inc/Common.h"
+//#include "Pins.h"
+#include "../inc/Errors.h"
 
 //-----------------------------------------------------------------------------
 // Exported constants
@@ -25,7 +30,8 @@ SBIT (Timeout_us_1, SFR_PCA0CN, 4);    // microsecond timeout flag 1
 
 extern INTERRUPT_PROTO (PCA0_ISR, INTERRUPT_PCA0);
 extern U8 Wait_us (U16 us);
-extern U8 Wait_ms (U16 ms);
+//extern U8 Wait_ms (U16 ms);
+extern U8 Wait_5ms (U16 ms);
 extern U8 Start_Stopwatch (void);
 extern U8 Stop_Stopwatch (void);
 //extern U8 Set_Timeout_ms_1 (U16);
@@ -37,8 +43,11 @@ extern U8 Stop_Stopwatch (void);
 //-----------------------------------------------------------------------------
 
 SBIT (TFus, SFR_TCON, 5);              // microsecond delay flag (TF0)
-extern bit TFms;                       // millisecond delay flag
-extern bit Timeout_ms_1;               // millisecond timeout flag 1
+//extern bit TFms;                       // millisecond delay flag
+//extern bit Timeout_ms_1;               // millisecond timeout flag 1
+extern bit TF5ms;                       // 5 millisecond delay flag
+extern bit Timeout_ms_5;               //  5millisecond timeout flag 1
+
 extern bit Stopwatch_active;           // '1' if Stopwatch_ms is counting
 //extern bit Timeout_us_1;               // microsecond timeout flag 1
 extern U16 Freerun_us_High;            // PCA main counter overflow

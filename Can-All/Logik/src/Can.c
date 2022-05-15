@@ -334,7 +334,7 @@ SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
   DbgCounter++;
 #endif
 
-
+  TF5ms = 1;
   if (FirstRun)
     {
       //comment if other client sends <reset all nodes>

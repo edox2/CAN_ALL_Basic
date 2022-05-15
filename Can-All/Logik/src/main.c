@@ -411,14 +411,14 @@ long DoPumpStartup(void)
 //  enable Vacuum Pump
   EN_A = HIGH;
 
-  Wait_ms((U16) 500); //todo sigi: does not work (TFms flag gets never set -> timer/interrupt not initialized)
+  Wait_5ms((U16) 10); //todo sigi: does not work (TFms flag gets never set -> timer/interrupt not initialized)
 
   if(getHighSideSwitchACurrent_mA() < 100)  //check if Pump is running
   {
     error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
   }
 
-  //  Wait_ms((U16) 500); todo: does not work
+  Wait_5ms((U16) 50);
 
   error += getPressureReading_mbar(&vacuumLevel);
 
@@ -437,7 +437,7 @@ long DoPumpStartup(void)
   //disable Vacuum Pump
   EN_A = LOW;
 
-  //  Wait_ms((U16) 500); todo: does not work
+  Wait_5ms((U16) 50);
 
   if(getHighSideSwitchACurrent_mA() > 100)  //check if Pump is OFF
   {

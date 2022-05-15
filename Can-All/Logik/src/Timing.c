@@ -16,13 +16,9 @@
 //
 //-----------------------------------------------------------------------------
 
-//#include "../inc/compiler_defs.h"
-#include <SI_C8051F550_Defs.h>
-#include <SI_C8051F550_Register_Enums.h>
-#include "../inc/Common.h"
-//#include "Pins.h"
+
 #include "../inc/Timing.h"
-#include "../inc/Errors.h"
+
 
 //-----------------------------------------------------------------------------
 // Internal Constants
@@ -34,7 +30,7 @@
 
 //INTERRUPT_PROTO (PCA0_ISR, INTERRUPT_PCA0);
 U8 Wait_us (U16 us);
-U8 Wait_ms (U16 ms);
+//U8 Wait_ms (U16 ms);
 U8 Start_Stopwatch (void);
 U8 Stop_Stopwatch (void);
 //U8 Set_Timeout_ms_1 (U16);
@@ -46,8 +42,11 @@ U8 Stop_Stopwatch (void);
 //-----------------------------------------------------------------------------
 
 //SBIT (TFus, SFR_TCON, 5);              // microsecond delay flag (TF0)
-bit TFms;                              // millisecond delay flag
-bit Timeout_ms_1;                      // millisecond timeout flag 1
+//bit TFms;                              // millisecond delay flag
+//bit Timeout_ms_1;                      // millisecond timeout flag 1
+bit TF5ms;                              // 5 millisecond delay flag
+bit Timeout_ms_5;                      // 5 millisecond timeout flag 1
+
 bit Stopwatch_active;                  // '1' if Stopwatch_ms is counting
 
 //bit Timeout_us_1;                      // microsecond timeout flag 1
@@ -110,14 +109,35 @@ U8 Wait_us (U16 us)
 // This value waits for TFms to go from 0 to 1, at least <ms> times.
 //
 //-----------------------------------------------------------------------------
-U8 Wait_ms (U16 ms)
+//U8 Wait_ms (U16 ms)
+//{
+//   TFms = 0;                           // clear ms overflow flag
+//   while (ms != 0x0000)                // repeat until <ms> have elapsed
+//   {
+//      while (!TFms);                   // wait for ms flag to be set
+//      TFms = 0;                        // clear it
+//      ms--;                            // update count
+//   }
+//   return NO_ERROR;
+//}
+
+//-----------------------------------------------------------------------------
+// Wait_ms
+//-----------------------------------------------------------------------------
+//
+// Return Value : error code
+// Parameters   : number of 5ms to wait
+//
+//
+//-----------------------------------------------------------------------------
+U8 Wait_5ms (U16 ms5)
 {
-   TFms = 0;                           // clear ms overflow flag
-   while (ms != 0x0000)                // repeat until <ms> have elapsed
+   TF5ms = 0;                           // clear ms overflow flag
+   while (ms5 != 0x0000)                // repeat until <ms5> have elapsed
    {
-      while (!TFms);                   // wait for ms flag to be set
-      TFms = 0;                        // clear it
-      ms--;                            // update count
+      while (!TF5ms);                   // wait for ms flag to be set
+      TF5ms = 0;                        // clear it
+      ms5--;                            // update count
    }
    return NO_ERROR;
 }
@@ -254,86 +274,87 @@ U8 Stop_Stopwatch (void)
 //    * will set Timeout_us_1 and clear disable its own interrupts
 //
 //-----------------------------------------------------------------------------
-//INTERRUPT (PCA0_ISR; INTERRUPT_PCA0)
-//{
-//   UU16 temp;                          // temporary math register
-//
-//   // handle all flags
-//
-//   if (CCF0)                           // handle CCF0
-//   {
-//      CCF0 = 0;
-//   }
-//   else if (CCF1)                      // handle CCF1
-//   {
-//      CCF1 = 0;
-//   }
-//   else if (CCF2)                      // handle CCF2
-//   {
-//      CCF2 = 0;
-//   }
-//   else if (CCF3)                      // handle CCF3
-//   {
-//      CCF3 = 0;
-//      TFms = 1;                        // set the ms counter bit
-//      Freerun_ms++;                    // update MS counter
-//      if (Stopwatch_active)
-//      {
-//         Stopwatch_ms++;               // update stopwatch if active
-//      }
-//      if (Freerun_ms == Timeout_ms_1_target)
-//      {
-//         Timeout_ms_1 = 1;
-//      }
-//      // update match for next ms
-//      temp.U8[LSB] = PCA0CPL3;         // read last match value
-//      temp.U8[MSB] = PCA0CPH3;
-//      // add 1000
-//      temp.U16 = temp.U16 + 1000;
-//      // re-write, Low byte first
-//      PCA0CPL3 = temp.U8[LSB];
-//      PCA0CPH3 = temp.U8[MSB];
-//      if (LED1_State == LED_UART_RX_TX)
-//      {
-//         if ((TX0 == LOW) || (RX0 == LOW))
-//         {
-//            LED1_OFF ();
-//         }
-//         else
-//         {
-//            LED1_ON ();
-//         }
-//      }
-//   }
-///*
-//   // used in polled mode now
-//   else if (CCF4)                      // handle CCF4
-//   {
-//      CCF4 = 0;
-//      Timeout_us_1 = 1;
-//      PCA0CPM4 &= ~0x40;               // disable further match events
-//      PCA0CPM4 &= ~0x01;               // disable further interrupts
-//   }
-//*/
-//   else if (CF)                        // handle CF
-//   {
-//      CF = 0;
-//      Freerun_us_High++;               // update overflow counter
-//      if (LED1_State == LED_ON)
-//      {
-//         LED1_ON ();
-//      }
-//      else if (LED1_State == LED_OFF)
-//      {
-//         LED1_OFF ();
-//      }
-//      else if (LED1_State == LED_FLASHING)
-//      {
-//         LED1_SWITCH ();
-//      }
-//   }
-//}
+/*
+INTERRUPT (PCA0_ISR; INTERRUPT_PCA0)
+{
+   UU16 temp;                          // temporary math register
 
+   // handle all flags
+
+   if (CCF0)                           // handle CCF0
+   {
+      CCF0 = 0;
+   }
+   else if (CCF1)                      // handle CCF1
+   {
+      CCF1 = 0;
+   }
+   else if (CCF2)                      // handle CCF2
+   {
+      CCF2 = 0;
+   }
+   else if (CCF3)                      // handle CCF3
+   {
+      CCF3 = 0;
+      TFms = 1;                        // set the ms counter bit
+      Freerun_ms++;                    // update MS counter
+      if (Stopwatch_active)
+      {
+         Stopwatch_ms++;               // update stopwatch if active
+      }
+      if (Freerun_ms == Timeout_ms_1_target)
+      {
+         Timeout_ms_1 = 1;
+      }
+      // update match for next ms
+      temp.U8[LSB] = PCA0CPL3;         // read last match value
+      temp.U8[MSB] = PCA0CPH3;
+      // add 1000
+      temp.U16 = temp.U16 + 1000;
+      // re-write, Low byte first
+      PCA0CPL3 = temp.U8[LSB];
+      PCA0CPH3 = temp.U8[MSB];
+      if (LED1_State == LED_UART_RX_TX)
+      {
+         if ((TX0 == LOW) || (RX0 == LOW))
+         {
+            LED1_OFF ();
+         }
+         else
+         {
+            LED1_ON ();
+         }
+      }
+   }
+
+   // used in polled mode now
+   else if (CCF4)                      // handle CCF4
+   {
+      CCF4 = 0;
+      Timeout_us_1 = 1;
+      PCA0CPM4 &= ~0x40;               // disable further match events
+      PCA0CPM4 &= ~0x01;               // disable further interrupts
+   }
+
+   else if (CF)                        // handle CF
+   {
+      CF = 0;
+      Freerun_us_High++;               // update overflow counter
+      if (LED1_State == LED_ON)
+      {
+         LED1_ON ();
+      }
+      else if (LED1_State == LED_OFF)
+      {
+         LED1_OFF ();
+      }
+      else if (LED1_State == LED_FLASHING)
+      {
+         LED1_SWITCH ();
+      }
+   }
+}
+*/
 
 //-----------------------------------------------------------------------------
 // End of File
