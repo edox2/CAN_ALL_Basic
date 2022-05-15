@@ -15,9 +15,6 @@
 // Global Constants
 //-----------------------------------------------------------------------------
 
-#define SYSCLK (12000000L * 4)         // system clock frequency in Hz
-
-
 #define VERSION "1.20"                 // version string
 #define DEBUG_LEVEL 0                  // compile-time debug directive
 

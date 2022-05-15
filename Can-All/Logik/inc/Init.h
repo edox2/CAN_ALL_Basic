@@ -18,6 +18,12 @@
 #ifndef INIT_H
 #define INIT_H
 
+#include "../inc/compiler_defs.h"
+#include "SI_C8051F550_Defs.h"
+#include "../inc/Common.h"
+//#include "../inc/Pins.h"
+//#include "../inc/Serial.h"
+#include "../inc/Can.h"
 
 // Board Types
 typedef enum
@@ -114,7 +120,7 @@ extern void PORT_Init (void);
 extern void Timer0_Init (void);
 extern void PCA0_Init (void);
 extern void OSCILLATOR_Init (void);
-extern void CAN_Init(int canNode);
+extern void CAN_Init(void);
 extern void ADC0_Init (void);
 extern void SetADC0Mux(int pin);
 

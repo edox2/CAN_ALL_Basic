@@ -376,26 +376,6 @@ void SetHSSDiagnostics()
   SEL2 = LOW;
 }
 
-//return own CAN node Number
-int getOwnCanNode(void)
-{
-  //Define CAN Node
-  switch(Board)
-  {
-    case(MAIN):
-          return CAN_NO_CAN_ALL_MAIN;
-        break;
-    case(VACUUM_WATER_PUMP):
-          return CAN_NO_CAN_ALL_PUMP;
-        break;
-    case(REVERSE_HEATER):
-           return CAN_NO_CAN_ALL_REV_HEATER;
-        break;
-    default:
-      return -1;
-  }
-}
-
 //check, enable inverter, battery and bender
 long DoMainStartup(void)
 {
@@ -608,9 +588,30 @@ void DoPumpError(void)
 void DoRevHeaterError(void)
 {
   }
+uint16_t getAdcReading_single(uint8_t pin)
+{
+  uint16_t currval;                        // Current value of ADC0
 
-//returns the DAC0 reading of the given pin(HEX)
-long getAdcReading(int pin, double *value) //todo: make work
+  uint8_t SFRPAGE_save = SFRPAGE;
+  SFRPAGE = LEGACY_PAGE;
+
+  ADC0MX = pin;
+
+  ADC0CN_ADINT = 0;                         // Clear end-of-conversion indicator
+  ADC0CN_ADBUSY = 1;                        // Initiate conversion
+
+  while (!ADC0CN_ADINT);                 // Wait for conversion to complete
+  ADC0CN_ADINT = 0;                      // Clear end-of-conversion indicator
+
+  currval = ADC0;                  // Store latest ADC conversion
+  ADC0CN_ADBUSY = 1;                     // Initiate conversion
+
+  SFRPAGE = SFRPAGE_save;
+  return currval;
+}
+
+
+long getAdcReading_HighRes(int pin, float *value) //todo: make work
 {
   int adcReading = 0;
 

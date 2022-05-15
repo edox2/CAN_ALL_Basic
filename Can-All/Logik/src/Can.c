@@ -11,9 +11,7 @@
 // Includes
 //-----------------------------------------------------------------------------
 
-#include <SI_C8051F550_Defs.h>
-#include <SI_C8051F550_Register_Enums.h>
-#include <STRING.h>
+
 #include "../inc/Can.h"
 
 
@@ -30,6 +28,9 @@ int16_t CANgetMessageInt(uint8_t objNum, uint8_t startIndex);
 SI_INTERRUPT_PROTO(CAN0_ISR, INTERRUPT_CAN0);
 SI_INTERRUPT_PROTO(TIMER0_ISR, INTERRUPT_TIMER0);
 
+
+volatile SI_UU64_t CanMsgObject[MESSAGE_OBJECTS];
+volatile uint16_t CanMsgId[MESSAGE_OBJECTS];
 
 //-----------------------------------------------------------------------------
 // Global Variables
