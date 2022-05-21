@@ -13,6 +13,7 @@
 
 
 #include "../inc/Can.h"
+#include "../inc/TypeDefs.h"
 
 
 //-----------------------------------------------------------------------------
@@ -24,6 +25,12 @@ void CANtransferMessageObj(uint8_t objNum, SI_UU64_t payload);
 void CANtriggerMessageObj(uint8_t objNum);
 SI_UU64_t CANgetMessageObjPayload(uint8_t objNum);
 int16_t CANgetMessageInt(uint8_t objNum, uint8_t startIndex);
+
+void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr);
+void UpdateInvertorReadings(struct Invertor *Invertor);
+void UpdateBenderImcReadings(struct BenderIMC *Bender);
+uint8_t isRevSelected();
+
 
 SI_INTERRUPT_PROTO(CAN0_ISR, INTERRUPT_CAN0);
 SI_INTERRUPT_PROTO(TIMER0_ISR, INTERRUPT_TIMER0);
@@ -63,7 +70,9 @@ int16_t Current2;
 int16_t Current3;
 int16_t Current4;
 
-
+//Global Variables
+uint8_t SEND_HEARTBEAT = 0;
+struct Battery Battery1;
 
 //-----------------------------------------------------------------------------
 // PUBLIC FUNCTIONS
@@ -293,6 +302,155 @@ int16_t CANgetMessageInt(uint8_t objNum, uint8_t startIndex)
   return result.s16;
 }
 
+void GetSoCAverage(uint16_t *SoCavg)
+{
+  *SoCavg  =   (CANgetMessageInt(GET_BAT1_CURRENT, 4) + CANgetMessageInt(GET_BAT2_CURRENT, 4) + CANgetMessageInt(GET_BAT3_CURRENT, 4) + CANgetMessageInt(GET_BAT4_CURRENT, 4))/(NumOfBat) ? NumOfBat : 1;
+}
+
+//todo check if correct
+uint8_t isRevSelected()
+{
+  return (CANgetMessageInt(GET_INV_STATE1, 6) & 0x0004);
+}
+
+void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr)
+{
+  SI_UU64_t payload;
+  uint16_t BatStatus;
+  uint8_t state;
+  uint8_t objNum_status, objNum_Current;
+
+  switch(BatNr)
+  {
+    case 1:
+      objNum_status = GET_BAT1_STATUS;
+      objNum_Current = GET_BAT1_CURRENT;
+      break;
+    case 2:
+      objNum_status = GET_BAT2_STATUS;
+      objNum_Current = GET_BAT2_CURRENT;
+      break;
+    case 3:
+      objNum_status = GET_BAT3_STATUS;
+      objNum_Current = GET_BAT3_CURRENT;
+      break;
+    case 4:
+      objNum_status = GET_BAT4_STATUS;
+      objNum_Current = GET_BAT4_CURRENT;
+      break;
+    default:
+        return;
+      break;
+  };
+
+  BatStatus = CANgetMessageInt(objNum_status, 0);
+
+  Bat->Status.NodeActive = (BatStatus & 0x0001);
+  Bat->Status.Error = (BatStatus & 0x0002);
+  Bat->Status.ValidValues = (BatStatus & 0x0004);
+  Bat->Status.PrechargeOk = (BatStatus & 0x0008);
+  Bat->Status.HvRelaisEnable = (BatStatus & 0x0010);
+  Bat->Status.MasterActive = (BatStatus & 0x0020);
+  Bat->Status.Warning = (BatStatus & 0x0040);
+  Bat->Status.Balancing = (BatStatus & 0x0080);
+  Bat->Status.InternHeating = (BatStatus & 0x0100);
+  Bat->Status.ExternHeating = (BatStatus & 0x0200);
+
+  payload = CANgetMessageObjPayload(objNum_Current);
+  state = payload.u8[7];
+
+  Bat->State.Start = (state & 0x0001);
+  Bat->State.Idle = (state & 0x0002);
+  Bat->State.Balancing = (state & 0x0004);
+  Bat->State.Drive = (state & 0x0008);
+  Bat->State.Charge = (state & 0x0010);
+  Bat->State.BalancerSaveAndOff = (state & 0x0020);
+  Bat->State.BalancerOffDelay = (state & 0x0040);
+  Bat->State.Error = (state & 0x0080);
+  Bat->State.Boot = (state & 0x0100);
+
+  Bat->SoC = CANgetMessageInt(objNum_status, 4);
+  Bat->SoH = CANgetMessageInt(objNum_status, 6);
+  Bat->Current = CANgetMessageInt(objNum_Current, 2);
+}
+
+
+void UpdateInvertorReadings(struct Invertor *Invertor)
+{
+  SI_UU64_t TempPayload;
+  SI_UU16_t MotorFlags;
+  SI_UU16_t SystemFlags;
+
+  TempPayload = CANgetMessageObjPayload(GET_INV_STATE1);
+
+  MotorFlags.u8[1]     = TempPayload.u8[4];
+  MotorFlags.u8[0]     = TempPayload.u8[5];
+  SystemFlags.u8[1]     = TempPayload.u8[6];
+  SystemFlags.u8[0]     = TempPayload.u8[7];
+
+  Invertor->Inverter_Temp = TempPayload.u8[0];
+  Invertor->Motor_Temp = TempPayload.u8[1];
+  Invertor->Tourque.u8[1] = TempPayload.u8[2];
+  Invertor->Tourque.u8[0] = TempPayload.u8[3];
+
+  //todo: check byte order u8[0] vs u8[1] (loaded and sorted above)
+  Invertor->SystemFlags.isSoCLowForTraction = (SystemFlags.u8[0] & 0x0001);
+  Invertor->SystemFlags.isSoCLowForHydraulic = (SystemFlags.u8[0] & 0x0002);
+  Invertor->SystemFlags.isReverseActive = (SystemFlags.u8[0] & 0x0004);
+  Invertor->SystemFlags.isForwardActive = (SystemFlags.u8[0] & 0x0008);
+  Invertor->SystemFlags.isParkBrakeActive = (SystemFlags.u8[0] & 0x0010);
+  Invertor->SystemFlags.isPedalBrakeActive = (SystemFlags.u8[0] & 0x0020);
+  Invertor->SystemFlags.isControllerInOvertemperature = (SystemFlags.u8[0] & 0x0040);
+  Invertor->SystemFlags.isKeySwitchOvervoltage = (SystemFlags.u8[1] & 0x0080);
+  Invertor->SystemFlags.isKeySwitchUndervoltage = (SystemFlags.u8[1] & 0x0100);
+  Invertor->SystemFlags.isVehicleRunning_NotStill = (SystemFlags.u8[1] & 0x0200);
+  Invertor->SystemFlags.isTractionEnabled = (SystemFlags.u8[1] & 0x0400);
+  Invertor->SystemFlags.isPoweringEnabled = (SystemFlags.u8[1] & 0x0800);
+  Invertor->SystemFlags.isPoweringReady = (SystemFlags.u8[1] & 0x1000);
+
+  Invertor->MotorFlags.isLimitationActive_Motor1 = (MotorFlags.u8[0] & 0x0001);
+  Invertor->MotorFlags.EncoderChannelA_Motor1 = (MotorFlags.u8[0] & 0x0002);
+  Invertor->MotorFlags.EncoderChannelB_Motor1 = (MotorFlags.u8[0] & 0x0004);
+  Invertor->MotorFlags.isOvertemperature_Motor1 = (MotorFlags.u8[0] & 0x0008);
+
+  TempPayload = CANgetMessageObjPayload(GET_INV_STATE2);
+
+  Invertor->FaultCode = TempPayload.u8[4];
+
+  Invertor->FaultLevel.Ready = (TempPayload.u8[5] & 0x01);
+  Invertor->FaultLevel.Blocking = (TempPayload.u8[5] & 0x02);
+  Invertor->FaultLevel.Stopping = (TempPayload.u8[5] & 0x04);
+  Invertor->FaultLevel.Limiting = (TempPayload.u8[5] & 0x08);
+  Invertor->FaultLevel.Warning = (TempPayload.u8[5] & 0x10);
+
+  Invertor->DC_Bus_Current.u8[1] = TempPayload.u8[6];
+  Invertor->DC_Bus_Current.u8[0] = TempPayload.u8[7];
+}
+
+void UpdateBenderImcReadings(struct BenderIMC *Bender)
+{
+  uint16_t Payload;
+
+  Bender->IMC_R_ISO = CANgetMessageInt(GET_IMD_INFO, 0);
+
+  Payload=CANgetMessageInt(GET_IMD_INFO, 2);
+
+  Bender->ImcStatus.IsolationError = (Payload & 0x0001);
+  Bender->ImcStatus.ChassisError = (Payload & 0x0002);
+  Bender->ImcStatus.SystemError = (Payload & 0x0004);
+  Bender->ImcStatus.CalibratingActive = (Payload & 0x0008);
+  Bender->ImcStatus.SelbsttestActive = (Payload & 0x0010);
+  Bender->ImcStatus.IsolationWarning = (Payload & 0x0020);
+
+  Payload=CANgetMessageInt(GET_IMD_INFO, 4);
+
+  Bender->VifcStatus. IsolationMeasurementActivated = (Payload & 0x0001);
+  Bender->VifcStatus.ImcAliveStaterecognition = (Payload & 0x0004);
+  Bender->VifcStatus.OldMeasuremend = (Payload & 0x0100);
+  Bender->VifcStatus.OverallImcSelbsttest = (Payload & 0x0800);
+  Bender->VifcStatus.ParameterImcSelbsttest = (Payload & 0x1000);
+
+}
 
 //-----------------------------------------------------------------------------
 // Interrupt Service Routines
@@ -334,7 +492,8 @@ SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
   DbgCounter++;
 #endif
 
-  TF5ms = 1;
+  TF5ms = 1;  // misused 5ms interrupt for timing sleep timing routine
+
   if (FirstRun)
     {
       //comment if other client sends <reset all nodes>
@@ -376,25 +535,24 @@ SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
     }
 
   // Count the number of batteries after <first-run> phase
-  TestBat1 = CANgetMessageInt(GET_BAT1_STATE, 0) & 0x01;
-  TestBat2 = CANgetMessageInt(GET_BAT2_STATE, 0) & 0x01;
-  TestBat3 = CANgetMessageInt(GET_BAT3_STATE, 0) & 0x01;
-  TestBat4 = CANgetMessageInt(GET_BAT4_STATE, 0) & 0x01;
-  NumOfBat = TestBat1 + TestBat2 + TestBat3 + TestBat4;
+  TestBat1 = CANgetMessageInt(GET_BAT1_STATUS, 0) & 0x01;
+  TestBat2 = CANgetMessageInt(GET_BAT2_STATUS, 0) & 0x01;
+  TestBat3 = CANgetMessageInt(GET_BAT3_STATUS, 0) & 0x01;
+  TestBat4 = CANgetMessageInt(GET_BAT4_STATUS, 0) & 0x01;
+  NumOfBat = TestBat1 + TestBat2 + TestBat3 + TestBat4; // Dynamic Num of Bat
 
 
   DataBaguette.u32[0] = 0x00000000;
   DataBaguette.u32[1] = 0x00000000;
 
-  if (NUM_OF_BATTERIES != 0)
+  if (NUM_OF_BATTERIES != 0)  // Static Num of Bat
     NumOfBat = NUM_OF_BATTERIES;
 
-  if ((CANgetMessageInt(GET_BAT1_STATE, 0) & BMS_STATE_VALID_VALUES) +
-      (CANgetMessageInt(GET_BAT2_STATE, 0) & BMS_STATE_VALID_VALUES) +
-      (CANgetMessageInt(GET_BAT3_STATE, 0) & BMS_STATE_VALID_VALUES) +
-      (CANgetMessageInt(GET_BAT4_STATE, 0) & BMS_STATE_VALID_VALUES) ==
-      (BMS_STATE_VALID_VALUES * NumOfBat)) // Dynamic Num of Bat
- //     (BMS_STATE_VALID_VALUES * NUM_OF_BATTERIES)) // Static num of bat
+  if ((CANgetMessageInt(GET_BAT1_STATUS, 0) & BMS_STATE_VALID_VALUES) +
+      (CANgetMessageInt(GET_BAT2_STATUS, 0) & BMS_STATE_VALID_VALUES) +
+      (CANgetMessageInt(GET_BAT3_STATUS, 0) & BMS_STATE_VALID_VALUES) +
+      (CANgetMessageInt(GET_BAT4_STATUS, 0) & BMS_STATE_VALID_VALUES) ==
+      (BMS_STATE_VALID_VALUES * NumOfBat))
     {
       DataBaguette.u8[0] = BAT_ON;
     }

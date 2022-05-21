@@ -412,7 +412,7 @@ void CAN_Init ()
    CAN0CN &= ~0x41;                    // Return to Normal Mode and disable
                                        // access to bit timing register
 
-   EIE2 |= 0x02;                       // Enable CAN interrupts
+//   EIE2 |= 0x02;                       // Enable CAN interrupts
 
    SFRPAGE = SFRPAGE_save;
 }

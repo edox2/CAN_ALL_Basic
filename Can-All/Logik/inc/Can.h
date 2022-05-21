@@ -34,7 +34,6 @@
 #define TIMER0_RL_HIGH  (0xFFFF -((SYSCLK/48/POLLRATE_HZ >> 8) & 0x00FF))
 #define TIMER0_RL_LOW   (0xFFFF -(SYSCLK/48/POLLRATE_HZ & 0x00FF))
 
-#define SEND_HEARTBEAT (1)
 #define SEND_DBG_COUNTER (0)
 
 // NODE-Ids for Message Objects.
@@ -91,10 +90,10 @@
 #define SET_BAT3_STATE (3)  // Message Object to transmit State Msg to BAT3
 #define SET_BAT4_STATE (4)  // Message Object to transmit State Msg to BAT4
 
-#define GET_BAT1_STATE (5)  // Message Object to receive State Msg from BAT1
-#define GET_BAT2_STATE (6)  // Message Object to receive State Msg from BAT2
-#define GET_BAT3_STATE (7)  // Message Object to receive State Msg from BAT3
-#define GET_BAT4_STATE (8)  // Message Object to receive State Msg from BAT4
+#define GET_BAT1_STATUS (5)  // Message Object to receive State Msg from BAT1
+#define GET_BAT2_STATUS (6)  // Message Object to receive State Msg from BAT2
+#define GET_BAT3_STATUS (7)  // Message Object to receive State Msg from BAT3
+#define GET_BAT4_STATUS (8)  // Message Object to receive State Msg from BAT4
 
 #define SET_BROADCAST  (9)  // Message Object to transmit Broadcast such as <Start All Nodes>
 #define SET_HEARTBEAT (10)  // Message Object to transmit Heartbeat or Startup Message to the CAN-BUS
@@ -151,6 +150,11 @@ typedef union SI_UU64
 //-----------------------------------------------------------------------------
 
 static uint8_t NumOfBat = 0;
+extern uint8_t SEND_HEARTBEAT;
+extern void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr);
+extern void UpdateInvertorReadings(struct Invertor *Invertor);
+extern void UpdateBenderImcReadings(struct BenderIMC *Bender);
+extern uint8_t isRevSelected();
 
 
 static const uint16_t MessageBoxCanId[MESSAGE_OBJECTS] = // List of all CAN IDs associated to the CAN-objects
