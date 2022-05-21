@@ -79,6 +79,7 @@ typedef enum
    BOARD_MAIN_CONTROLLER = 100000,
    BOARD_PUMP = 200000,
    BOARD_REV_HEATER = 300000,
+   BOARD_TYPE_GEN = 900000,
 
    //Type Definition
    TYPE_GENERIC = 100,
@@ -91,6 +92,7 @@ typedef enum
    TYPE_ADC = 800,
    TYPE_HSS = 900,
    TYPE_HW = 1000,
+   TYPE_CAN = 1100,
 
 
 
@@ -105,6 +107,8 @@ typedef enum
    INVERTER_ERROR_TEMPERATURE = ERROR_LEVEL_FATAL + TYPE_INVERTER + 2, //
    INVERTER_ERROR_BATTERY_LEVEL = TYPE_INVERTER + 3, //
    INVERTER_ERROR_PARAMETER = TYPE_INVERTER + 4, //
+   INVERTER_ERROR_FAULTLEVEL_BLOCKING = TYPE_INVERTER + 5, //
+
    //INVERTER_ERROR_ = 000105, //
    //INVERTER_ERROR_ = 000106, //
    //INVERTER_ERROR_ = 000107, //
@@ -147,6 +151,9 @@ typedef enum
 
    //Reverse Light, Heater Melting fuse BOARD
    HEATER_FUSE_ERROR = BOARD_REV_HEATER + TYPE_HW + 1,     // Melt Fuse is busted, Heater OFF
+
+   //CAN error
+   CAN_NOT_AVALIABLE = BOARD_TYPE_GEN + TYPE_CAN + 1,
 }ERROR_RECORD;
 
 //typedef struct
