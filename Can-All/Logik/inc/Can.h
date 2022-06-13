@@ -149,7 +149,7 @@ typedef union SI_UU64
 // CAN STATICS
 //-----------------------------------------------------------------------------
 
-static uint8_t NumOfBat = 0;
+static uint8_t NumOfBat = 3;
 extern uint8_t SEND_HEARTBEAT;
 extern void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr);
 extern void UpdateInvertorReadings(struct Invertor *Invertor);
@@ -162,15 +162,27 @@ static const uint16_t MessageBoxCanId[MESSAGE_OBJECTS] = // List of all CAN IDs 
     CAN_ID_BROADCAST, // Dummy Line MsgObj0
     RPDO1_BMS + CAN_ID_BAT1, RPDO1_BMS + CAN_ID_BAT2, RPDO1_BMS + CAN_ID_BAT3, RPDO1_BMS + CAN_ID_BAT4, TPDO1_BMS + CAN_ID_BAT1, TPDO1_BMS + CAN_ID_BAT2, TPDO1_BMS + CAN_ID_BAT3, TPDO1_BMS + CAN_ID_BAT4,  //line 1-8
     CAN_ID_BROADCAST, CAN_ID_HEARTBEAT + CAN_ALL_ID, CAN_ALL_ID, CAN_ALL_ID, 0x013, 0x014, 0x015, 0x016,  //line 9-16
-    0x017, 0x018, 0x019, 0x020, 0x021, 0x022, 0x023, 0x024,  //line 17-24
+    (CAN_ID_INVERTER + TPDO1_INV), (CAN_ID_INVERTER + TPDO2_INV),  (CAN_ID_IMD_INFO), 0x020, 0x021, 0x022, 0x023, 0x024,  //line 17-24
     0x025, 0x026, 0x027, 0x028, 0x029, 0x030, 0x031, CAN_ID_BROADCAST,  //line 25-32
 };
 
+//Make shure CanAll does not send any thing over can -> only *RX directions
+/*
 static const uint8_t MessageBoxDirTx[MESSAGE_OBJECTS] = // List of all directions associated to the CAN-objects
 {
     CAN_DIR_RX, // Dummy Line MsgObj0
     CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 1-8
     CAN_DIR_TX, CAN_DIR_TX, CAN_DIR_RX, CAN_DIR_TX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 9-16
+    CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 17-24
+    CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 25-32
+};
+*/
+
+static const uint8_t MessageBoxDirTx[MESSAGE_OBJECTS] = // List of all directions associated to the CAN-objects
+{
+    CAN_DIR_RX, // Dummy Line MsgObj0
+    CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 1-8
+    CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 9-16
     CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 17-24
     CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX, CAN_DIR_RX,  //line 25-32
 };
@@ -180,7 +192,7 @@ static const uint8_t MessageBoxSize[MESSAGE_OBJECTS] = // List of all size  of a
     8,// Dummy Line MsgObj0 Copy of 32!
     8, 8, 8, 8, 8, 8, 8, 8,   //line 1-8
     2, 1, 1, 2, 0, 0, 0, 0,   //line 9-16
-    0, 0, 0, 0, 0, 0, 0, 0,   //line 17-24
+    8, 8, 8, 0, 0, 0, 0, 0,   //line 17-24
     0, 0, 0, 0, 0, 0, 0, 8,   //line 25-32
 };
 
@@ -189,7 +201,7 @@ static const uint8_t MessageBoxInUse[MESSAGE_OBJECTS] = // List of all active CA
     1,  // Dummy Line MsgObj0 Copy of 32!
     1, 1, 1, 1, 1, 1, 1, 1,   //line 1-8
     1, 1, 1, 1, 0, 0, 0, 0,   //line 9-16
-    0, 0, 0, 0, 0, 0, 0, 0,   //line 17-24
+    1, 1, 1, 0, 0, 0, 0, 0,   //line 17-24
     0, 0, 0, 0, 0, 0, 0, 1,   //line 25-32
 };
 

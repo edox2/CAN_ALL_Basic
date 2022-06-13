@@ -48,6 +48,7 @@ struct Battery{
 
   struct Battery_State State;    //0       1       2           3       4         5                     20                      21                    22              99      199
                                 //START   IDLE    BALANCING   DRIVE   CHARGE    CHARGE_CONSERVATION   BALANCER SAVE AND OFF   BALANCER OFF DELAY    BALANCER OFF    ERROR   BOOT
+  uint16_t ErrorWarningNr;
   uint16_t SoC;
   uint16_t SoH;
   uint16_t CellDiff_mV;
@@ -97,7 +98,7 @@ struct Invertor{
   struct System_Flags SystemFlags;    // BIT0                 BIT1                  BIT2            BIT3            BIT4              BIT5                BIT6                          BIT7                    BIT8                    BIT9                      BIT10             BIT11               BIT12             BIT13           BIT14÷BIT15
                                       // isSoCLowForTraction  isSoCLowForHydraulic  isReverseActive isForwardActive isParkBrakeActive isPedalBrakeActive  isControllerInOvertemperature isKeySwitchOvervoltage  isKeySwitchUndervoltage isVehicleRunning_NotStill isTractionEnabled isHydraulicEnabled  isPoweringEnabled isPoweringReady Reserved
   uint8_t FaultCode;      // See manual
-  struct FaultLevel FaultLevel;      // 0    1         2         3         4
+  uint8_t FaultLevel;      // 0    1         2         3         4
                                     // Ready Blocking  Stopping  Limiting  Warning
 
   SI_UU16_t DC_Bus_Current; // [dA] (1dA=0.1A)

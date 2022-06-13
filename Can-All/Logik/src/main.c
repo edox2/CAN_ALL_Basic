@@ -40,13 +40,13 @@
 // Global CONSTANTS
 //-----------------------------------------------------------------------------
 
-#define VACUUM_MIN                100.0   // [mBar] disable vacuum pump at this level todo ben: defnie more accurate
-#define VACUUM_MAX                300.0   // [mBar] enable vacuum pump at this level todo ben: defnie more accurate
+#define VACUUM_MIN                400.0   // [mBar] disable vacuum pump at this level todo ben: defnie more accurate
+#define VACUUM_MAX                600.0   // [mBar] enable vacuum pump at this level todo ben: defnie more accurate
 #define INVERTER_TEMPERATURE_MAX  95.0    // [°C] Maximal inverter Temperature -> shut down todo ben: defnie more accurate
 #define INVERTER_TEMPERATURE_WARN 65.0    // [°C] Temperature to start cooling todo ben: defnie more accurate
 #define INVERTER_TEMPERATURE_MIN  45.0    // [°C] Temperature to stop cooling todo ben: defnie more accurate
-#define MOTOR_TEMPERATURE_MAX     95      // [°C] Maximal motor Temperature -> shut down todo ben: defnie more accurate
-#define MOTOR_TEMPERATURE_WARN    65      // [°C] Temperature to start cooling todo ben: defnie more accurate
+#define MOTOR_TEMPERATURE_MAX     95.0      // [°C] Maximal motor Temperature -> shut down todo ben: defnie more accurate
+#define MOTOR_TEMPERATURE_WARN    65.0      // [°C] Temperature to start cooling todo ben: defnie more accurate
 #define MOTOR_TEMPERATURE_MIN     45.0    // [°C] Temperature to stop cooling todo ben: defnie more accurate
 #define VREF                      2200.0  // [mV] ADC Voltage Reference
 #define HSS_TEMPERATURE_FACTOR    0.012   // [°C/mV]
@@ -55,8 +55,9 @@
 #define HSS_CURRENT_OFFSET        0.0     // [mV]
 #define HSS_VOLTAGE_FACTOR        0.085   // [V/mV]
 #define HSS_VOLTAGE_OFFSET        0.0     // [mV]
-#define VACUUM_FACTOR             0.25    // [mBar/mV]
+#define VACUUM_FACTOR             -0.25    // [mBar/mV]
 #define VACUUM_OFFSET             -500.0  // [mV] 0hpa @ 0.5V V_out
+#define ADC_TO_MV                 1.915   // [mV/DAC]
 //-----------------------------------------------------------------------------
 // Includes
 //-----------------------------------------------------------------------------
@@ -93,12 +94,15 @@ long getPressureReading_mbar(int *value);
 void DoMainError(void);
 void DoPumpError(void);
 void DoRevHeaterError(void);
-long checkCan();
+long checkCan(void);
+void enableInterrupts(void);
+void disableInterrupts(void);
+int isInvertorReady(void);
 
 //-----------------------------------------------------------------------------
 // Defines
 //-----------------------------------------------------------------------------
-BoardType Board = MAIN;
+BoardType Board = MAIN; //MAIN, VACUUM_WATER_PUMP, REVERSE_HEATER
 StateMachine CURRENT_STATE = ERROR;
 
 
@@ -179,6 +183,14 @@ void main (void)
    // Init board auxillary's
    CURRENT_STATE = INIT;
    error += doInit();
+   SFRPAGE_save = SFRPAGE;
+   SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+
+   //enable CAN and global interrupt's
+   EIE2 |= 0x02;                      // enable CAN interrupt
+   IE_EA = 1;                         // enable global interrupts
+
+   SFRPAGE = SFRPAGE_save;
    error += checkBoard();
    error += checkCan();
 
@@ -289,6 +301,9 @@ void highSide_Init(void)
 long checkBoard(void)
 {
   long error = 0;
+
+  EN_A = LOW;
+  EN_B = LOW;
 
   if(ST_A == LOW)
     {
@@ -659,7 +674,7 @@ uint16_t getAdcReading_single(uint8_t pin)
   ADC0CN_ADBUSY = 1;                     // Initiate conversion
 
   SFRPAGE = SFRPAGE_save;
-  return currval;
+  return (uint16_t)((double)(currval*ADC_TO_MV));
 }
 
 
@@ -715,21 +730,75 @@ long getAdcReading_HighRes(int pin, float *value) //todo: make work
 long getPressureReading_mbar(int *value)
 {
  long error = NO_ERROR;
-
+ double vac = 0;
   //Vacuum Sensor 0kPa @ 0.5V, -100kPa @ 4.5V
   //calculate pressure [mBar], based on 101kPa (athmosperic pressure @ 0müm)
 //  *value = 101 - (int)(vacuumSensorReading*VacuumFactor+VacuumOffset);
-  *value = (int)(getAdcReading_single(P1_7)*VACUUM_FACTOR+VACUUM_OFFSET);
+// vac=getAdcReading_single(P1_7);
+// vac=(vac+VACUUM_OFFSET)*VACUUM_FACTOR;
+// *value=(int)vac;
+ *value = (int)(1100+((getAdcReading_single(P1_7)+VACUUM_OFFSET)*VACUUM_FACTOR));
 
   return error;
 }
 
 long checkCan()
 {
+//  struct BenderIMC bender;
+
+//  struct Battery bat1, bat2, bat3;
+//
+//  UpdateBatteryReadings(&bat1, 1);
+//  UpdateBatteryReadings(&bat2, 2);
+//  UpdateBatteryReadings(&bat3, 3);
+
+//  UpdateBenderImcReadings(&bender);
+
   if (NumOfBat == 0)
     {
       return ERROR_LEVEL_FATAL + CAN_NOT_AVALIABLE; //todo can be checked a better way
     }
+  else
+    {
+      return NO_ERROR;
+    }
+}
+
+void enableInterrupts()
+{
+  uint8_t SFRPAGE_save = SFRPAGE;
+  SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+
+  //enable CAN and global interrupt's
+  IE_EA = 1;                         // enable global interrupts
+  EIE2 |= 0x02;                      // enable CAN interrupt
+  SFRPAGE = SFRPAGE_save;
+}
+void disableInterrupts()
+{
+  uint8_t SFRPAGE_save = SFRPAGE;
+  SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
+
+  //disable CAN and global interrupt's
+  IE_EA = 0;                          // Disable global interrupts
+  EIE2 &= ~0x02;                      // Disable CAN interrupt
+  SFRPAGE = SFRPAGE_save;
+
+}
+
+int isInvertorReady(void)
+{
+  struct Invertor inv;
+  UpdateInvertorReadings(&inv);
+
+  if(inv.FaultLevel == 0)
+      {
+        return 1;
+      }
+    else
+      {
+        return 0;
+      }
 }
 // Initialization Subroutines
 //-----------------------------------------------------------------------------

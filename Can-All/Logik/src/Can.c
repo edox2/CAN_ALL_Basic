@@ -369,6 +369,7 @@ void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr)
   Bat->State.Error = (state & 0x0080);
   Bat->State.Boot = (state & 0x0100);
 
+  Bat->ErrorWarningNr = payload.u8[3];
   Bat->SoC = CANgetMessageInt(objNum_status, 4);
   Bat->SoH = CANgetMessageInt(objNum_status, 6);
   Bat->Current = CANgetMessageInt(objNum_Current, 2);
@@ -383,13 +384,13 @@ void UpdateInvertorReadings(struct Invertor *Invertor)
 
   TempPayload = CANgetMessageObjPayload(GET_INV_STATE1);
 
-  MotorFlags.u8[1]     = TempPayload.u8[4];
-  MotorFlags.u8[0]     = TempPayload.u8[5];
-  SystemFlags.u8[1]     = TempPayload.u8[6];
-  SystemFlags.u8[0]     = TempPayload.u8[7];
+  MotorFlags.u8[0]     = TempPayload.u8[4];
+  MotorFlags.u8[1]     = TempPayload.u8[5];
+  SystemFlags.u8[0]     = TempPayload.u8[6];
+  SystemFlags.u8[1]     = TempPayload.u8[7];
 
-  Invertor->Inverter_Temp = TempPayload.u8[0];
-  Invertor->Motor_Temp = TempPayload.u8[1];
+  Invertor->Inverter_Temp = TempPayload.u8[0]-40;//offset of 40deg [40-295]
+  Invertor->Motor_Temp = TempPayload.u8[1]-40;  //offset of 40deg [40-295]
   Invertor->Tourque.u8[1] = TempPayload.u8[2];
   Invertor->Tourque.u8[0] = TempPayload.u8[3];
 
@@ -401,12 +402,13 @@ void UpdateInvertorReadings(struct Invertor *Invertor)
   Invertor->SystemFlags.isParkBrakeActive = (SystemFlags.u8[0] & 0x0010);
   Invertor->SystemFlags.isPedalBrakeActive = (SystemFlags.u8[0] & 0x0020);
   Invertor->SystemFlags.isControllerInOvertemperature = (SystemFlags.u8[0] & 0x0040);
-  Invertor->SystemFlags.isKeySwitchOvervoltage = (SystemFlags.u8[1] & 0x0080);
-  Invertor->SystemFlags.isKeySwitchUndervoltage = (SystemFlags.u8[1] & 0x0100);
-  Invertor->SystemFlags.isVehicleRunning_NotStill = (SystemFlags.u8[1] & 0x0200);
-  Invertor->SystemFlags.isTractionEnabled = (SystemFlags.u8[1] & 0x0400);
-  Invertor->SystemFlags.isPoweringEnabled = (SystemFlags.u8[1] & 0x0800);
-  Invertor->SystemFlags.isPoweringReady = (SystemFlags.u8[1] & 0x1000);
+  Invertor->SystemFlags.isKeySwitchOvervoltage = (SystemFlags.u8[0] & 0x0080);
+  Invertor->SystemFlags.isKeySwitchUndervoltage = (SystemFlags.u8[1] & 0x0001);
+  Invertor->SystemFlags.isVehicleRunning_NotStill = (SystemFlags.u8[1] & 0x0002);
+  Invertor->SystemFlags.isTractionEnabled = (SystemFlags.u8[1] & 0x0004);
+  Invertor->SystemFlags.isHydraulicEnabled = (SystemFlags.u8[1] & 0x0008);
+  Invertor->SystemFlags.isPoweringEnabled = (SystemFlags.u8[1] & 0x0010);
+  Invertor->SystemFlags.isPoweringReady = (SystemFlags.u8[1] & 0x0020);
 
   Invertor->MotorFlags.isLimitationActive_Motor1 = (MotorFlags.u8[0] & 0x0001);
   Invertor->MotorFlags.EncoderChannelA_Motor1 = (MotorFlags.u8[0] & 0x0002);
@@ -417,12 +419,15 @@ void UpdateInvertorReadings(struct Invertor *Invertor)
 
   Invertor->FaultCode = TempPayload.u8[4];
 
+  //todo: faultLevel is a int, not bool
+  Invertor->FaultLevel = TempPayload.u8[5];
+  /*
   Invertor->FaultLevel.Ready = (TempPayload.u8[5] & 0x01);
   Invertor->FaultLevel.Blocking = (TempPayload.u8[5] & 0x02);
   Invertor->FaultLevel.Stopping = (TempPayload.u8[5] & 0x04);
   Invertor->FaultLevel.Limiting = (TempPayload.u8[5] & 0x08);
   Invertor->FaultLevel.Warning = (TempPayload.u8[5] & 0x10);
-
+*/
   Invertor->DC_Bus_Current.u8[1] = TempPayload.u8[6];
   Invertor->DC_Bus_Current.u8[0] = TempPayload.u8[7];
 }
@@ -479,6 +484,8 @@ SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
   uint8_t TestBat3 = 0;
   uint8_t TestBat4 = 0;
 
+  TF5ms = 1;  // misused 5ms interrupt for timing sleep timing routine
+// make sure, batterys are not turned on. handled by the CAN-I-BALL
 
 #if (SEND_DBG_COUNTER == 1)
   static uint16_t DbgCounter = 0;
@@ -492,7 +499,6 @@ SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
   DbgCounter++;
 #endif
 
-  TF5ms = 1;  // misused 5ms interrupt for timing sleep timing routine
 
   if (FirstRun)
     {
@@ -515,22 +521,23 @@ SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
       }
 
 
-      if (FirstRun == 1) // Do this only once after startup
-      {
-          DataBaguette.u8[0] = 0x00;    // Prepare CAN-Message <Startup>
-          CANtransferMessageObj(SET_HEARTBEAT, DataBaguette);
-          CANtriggerMessageObj(SET_HEARTBEAT);      // Send the prepared Message-Objects to the CAN-Bus
-      }
+//      if (FirstRun == 1) // Do this only once after startup
+//      {
+//          DataBaguette.u8[0] = 0x00;    // Prepare CAN-Message <Startup>
+//          CANtransferMessageObj(SET_HEARTBEAT, DataBaguette);
+//          CANtriggerMessageObj(SET_HEARTBEAT);      // Send the prepared Message-Objects to the CAN-Bus
+//      }
 
       FirstRun--;
     }
   else
     {
-#if (SEND_HEARTBEAT == 1)
-      DataBaguette.u8[0] = 0x05;    // Prepare CAN-Message <Heartbeat>
-      CANtransferMessageObj(SET_HEARTBEAT, DataBaguette);
-      CANtriggerMessageObj(SET_HEARTBEAT);      // Send the prepared Message-Objects to the CAN-Bus
-#endif
+      //TODO BEN, heartbeat is sent by can-i-ball
+//#if (SEND_HEARTBEAT == 1)
+//      DataBaguette.u8[0] = 0x05;    // Prepare CAN-Message <Heartbeat>
+//      CANtransferMessageObj(SET_HEARTBEAT, DataBaguette);
+//      CANtriggerMessageObj(SET_HEARTBEAT);      // Send the prepared Message-Objects to the CAN-Bus
+//#endif
 
     }
 
@@ -584,6 +591,7 @@ SI_INTERRUPT(TIMER0_ISR, TIMER0_IRQn)
       CANtransferMessageObj(SET_BAT4_STATE, DataBaguette);
       CANtriggerMessageObj(SET_BAT4_STATE);
     }
+
 }
 
 

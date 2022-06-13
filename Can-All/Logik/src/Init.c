@@ -231,11 +231,11 @@ void Timer0_Init (void)
 
    TMOD  = 0x01;                       // Timer0 in 16-bit mode
    CKCON = 0x02;                       // Timer0 uses a 1:48 prescaler
-   CKCON |= 0x04;                      // Timer counts SYSCLKs
+//   CKCON |= 0x04;                      // Timer counts SYSCLKs
    IE_ET0 = 1;                         // Timer0 interrupt enabled
    TCON  = 0x10;                       // Timer0 ON
 
-   IE_ET0 = 0;                            // interrupts disabled ben: used to be ET0= = 1
+//   IE_ET0 = 0;                            // interrupts disabled ben: used to be ET0= = 1
 
    TCON_TR0 = 1;                            // Start timer ben: used to be TR0 = 1
 }
