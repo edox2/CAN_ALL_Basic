@@ -171,18 +171,17 @@ SI_SBIT(C2D, SFR_P2, 1);
 
 void main (void)
 {
-
    long error;
+   int test1, test2, test3;
+   uint8_t SFRPAGE_save = SFRPAGE;
+
    error = NO_ERROR;
    SFRPAGE = LEGACY_PAGE;              // Set SFR Page for PCA0MD
-
-   //disable interrupt's (and CAN)
-   IE_EA = 0;                          // Disable global interrupts
-   EIE2 &= ~0x02;                      // Disable CAN interrupt
 
    // Init board auxillary's
    CURRENT_STATE = INIT;
    error += doInit();
+
    SFRPAGE_save = SFRPAGE;
    SFRPAGE  = CAN0_PAGE;               // All CAN register are on page 0x0C
 
@@ -191,26 +190,53 @@ void main (void)
    IE_EA = 1;                         // enable global interrupts
 
    SFRPAGE = SFRPAGE_save;
-   error += checkBoard();
-   error += checkCan();
 
+//   Wait_5ms((U16) 5);
+//   enableInterrupts();
+   error += checkBoard();
+//   Wait_5ms((U16) 5);
+   error += checkCan();
+   C_Port = HIGH;
+
+   /*
    if(error > 0)
    {
      // todo error: init failed, what now?
    }
 
-   CURRENT_STATE = STARTUP;
+   Wait_5ms((U16) 10);
+
+   //WAIT UNTIL INVERTOR IS ONLINE
+   while(CURRENT_STATE == INIT)
+     {
+       if(EIE2 & 0x02 )
+         {
+           C_Port = LOW;
+         }
+       else
+         {
+           EIE2 |= 0x02;                      // enable CAN interrupt
+           C_Port = HIGH;
+           Wait_5ms((U16) 20);
+           C_Port = LOW;
+         }
+
+       if(isInvertorReady())   // 0    1         2         3         4
+         {                           // Ready Blocking  Stopping  Limiting  Warning
+           CURRENT_STATE = STARTUP;
+         }
+       Wait_5ms((U16) 10);
+
+//       checkCan();
+     }
+
+//   checkCan();
+
    SEND_HEARTBEAT = 0;
-
-   //enable interrupt's
-   EIE2 |= 0x02;                       // Enable CAN interrupts
-   //start CAN
-   IE_EA = 1;                          // Enable global interrupts
-
+/*
    switch(Board)
    {
      case(MAIN):
-//            SEND_HEARTBEAT = 1; //enable Battery's -> will be enabled by can-i-ball
             error += DoMainStartup();
          break;
      case(VACUUM_WATER_PUMP):
@@ -223,51 +249,74 @@ void main (void)
        error = ERROR_LEVEL_FATAL;
        break;
    }
+//   checkCan();
 
    if(error > 0)
    {
      // todo error: DoStartup failed, what now?
    }
 
-   CURRENT_STATE = RUN;
-   while (1 && CURRENT_STATE == RUN)
-   {
-     Wait_5ms(10);  //todo: define reasoneable cycling rate
 
+*/
+   CURRENT_STATE = RUN;
+   while (CURRENT_STATE == RUN)
+   {
+       C_Port = LOW;  //ENABLE LED
+
+       error=0;
+       test1 = 0;
+       test2 = 0;
+//       checkCan();
      switch(Board)
      {
        case(MAIN):
-             error = DoRunMain();
+               if(isInvertorReady())
+                 {
+                   error = DoRunMain();
+                 }
+//             error = DoRunMain();
+//              test1 = DoRunMain();
+//              test2 = isInvertorReady();
+//             if((test1 + test2)>0)
+//               {
+//                 CURRENT_STATE = ERROR;
+//               }
            break;
        case(VACUUM_WATER_PUMP):
-            error = DoRunPump();
+               if(isInvertorReady())
+                 {
+                   error = DoRunPump();
+                 }
            break;
        case(REVERSE_HEATER):
             error = DoRunRevHeater();
            break;
      }
-     if(error > ERROR_LEVEL_FATAL)
-     {
-       switch(Board)
-       {
-         case(MAIN):
-               DoMainError();
-             break;
-         case(VACUUM_WATER_PUMP):
-              DoPumpError();
-             break;
-         case(REVERSE_HEATER):
-              DoRevHeaterError();
-             break;
-       }
-       CURRENT_STATE = ERROR;
-     }
-     else if (error>0)
-       {
-         //todo error: define error handling
-       }
+//     if(error < ERROR_LEVEL_FATAL)
+//     {
+//       switch(Board)
+//       {
+//         case(MAIN):
+//               DoMainError();
+//             break;
+//         case(VACUUM_WATER_PUMP):
+//              DoPumpError();
+//             break;
+//         case(REVERSE_HEATER):
+//              DoRevHeaterError();
+//             break;
+//       }
+//       CURRENT_STATE = ERROR;
+//     }
+//     else if (error>0)
+//       {
+//         //todo error: define error handling
+//       }
 
    }                                   // end of while(1) todo: will run out if error state is reached -> define proceeding (cycle ignition?)
+   C_Port = HIGH;
+   Wait_5ms((U16) 100);
+   CURRENT_STATE = RUN;
 }                                      // end of main()
 
 //initialize generic Board Auxillery (ED, SYSCLK, ADC, etc.)
@@ -399,8 +448,10 @@ void SetHSSDiagnostics()
 long DoMainStartup(void)
 {
   long error = NO_ERROR;
-  struct BenderIMC bender;
   struct Invertor Invertor;
+
+  /*
+  struct BenderIMC bender;
 
   //Check battery dynamic battery
   if(NumOfBat == 0)
@@ -419,19 +470,20 @@ long DoMainStartup(void)
       {
         //todo error
       }
-
+*/
   //check inverter state
   if((Invertor.SystemFlags.isPoweringReady != 1)
       && (Invertor.FaultCode == 0)) //todo live: check flags...
     {
-      //todo error
+      return 99900;//todo error
     }
 
   EN_B = HIGH;  //enable Interlock Relais (close interlock loop)
 
   if(Invertor.SystemFlags.isTractionEnabled != 1)
     {
-      //todo error
+      EN_B = LOW;
+      return 99901;
     }
 
   return error;
@@ -448,21 +500,19 @@ long DoPumpStartup(void)
   //get Vacuum Level
   error += getPressureReading_mbar(&vacuumLevel_off);
 
-//  enable Vacuum Pump
+  //enable Vacuum Pump
   EN_A = HIGH;
 
-  Wait_5ms((U16) 10); //todo sigi: does not work (TFms flag gets never set -> timer/interrupt not initialized)
+  Wait_5ms((U16) 20);
 
-  if(getHighSideSwitchACurrent_mA() < 100)  //check if Pump is running
-  {
-    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
-  }
-
-  Wait_5ms((U16) 50);
+//  if(getHighSideSwitchACurrent_mA() < 100)  //check if Pump is running
+//  {
+//    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
+//  }
 
   error += getPressureReading_mbar(&vacuumLevel);
 
-  if(vacuumLevel+50 >= vacuumLevel_off) //check if Vacuum is building up
+  if(vacuumLevel+25 >= vacuumLevel_off) //check if Vacuum is building up
   {
     if(error == BOARD_VACUUM_PUMP_ERROR)  // pump is not running, no Vacuum is building up
       {
@@ -477,27 +527,31 @@ long DoPumpStartup(void)
   //disable Vacuum Pump
   EN_A = LOW;
 
-  Wait_5ms((U16) 50);
+//  Wait_5ms((U16) 50);
+//
+//  if(getHighSideSwitchACurrent_mA() > 100)  //check if Pump is OFF
+//  {
+//    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
+//  }
+//
+//  //check wather pump as well
+//  tempCurrent= getHighSideSwitchBCurrent_mA();
+//
+//  EN_B = HIGH;
+//  Wait_5ms((U16)10);
+//  if(getHighSideSwitchBCurrent_mA() <= (tempCurrent+100)) //Water pump is running now, so it should drain at least 100mA more than bevore
+//    {
+//      //todo error, water pump not running
+//    }
+//
+//  if(error == NO_ERROR) //Board seams OK, signal accordingly
+//  {
+////    B_PORT = HIGH;
+//  }
 
-  if(getHighSideSwitchACurrent_mA() > 100)  //check if Pump is OFF
-  {
-    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
-  }
+  EN_A=LOW;
+  EN_B=LOW;
 
-  //check wather pump as well
-  tempCurrent= getHighSideSwitchBCurrent_mA();
-
-  EN_B = HIGH;
-  Wait_5ms((U16)10);
-  if(getHighSideSwitchBCurrent_mA() <= (tempCurrent+100)) //Water pump is running now, so it should drain at least 100mA more than bevore
-    {
-      //todo error, water pump not running
-    }
-
-  if(error == NO_ERROR) //Board seams OK, signal accordingly
-  {
-    B_PORT = HIGH;
-  }
   return error;
 }
 
@@ -519,10 +573,18 @@ long DoRevHeatStartup(void)
 long DoRunMain(void)
 {
   long error = NO_ERROR;
-  struct Invertor invertor;
-  struct Battery bat1, bat2, bat3;
-  struct BenderIMC bender;
+//  struct Invertor invertor;
+//  struct Battery bat1, bat2, bat3;
+//  struct BenderIMC bender;
 
+  EN_B = HIGH;
+//  error = isInvertorReady();
+//  if(A_PORT == LOW ) //DC-DC FAILURE
+//    {
+//      EN_B = LOW;
+//      return 1;
+//    }
+  /*
   //check inverter
   UpdateInvertorReadings(&invertor);
 
@@ -550,6 +612,10 @@ long DoRunMain(void)
   {
     //todo how to handle if one battery has error
   }
+  if(!(bat1.Status.HvRelaisEnable && bat2.Status.HvRelaisEnable && bat3.Status.HvRelaisEnable))
+  {
+    //todo how to handle if one battery has error
+  }
   //todo what more to check?
 
   //check bender state
@@ -574,7 +640,8 @@ long DoRunMain(void)
       error += BOARD_PUMPS_EROR;
     }
 
- return error;
+  */
+ return 0;
 }
 
 long DoRunPump(void)
@@ -583,6 +650,7 @@ long DoRunPump(void)
   int vacuumLevel;
   struct Invertor inverter;
 
+  UpdateInvertorReadings(&inverter);
   error += getPressureReading_mbar(&vacuumLevel);
 
   if(error != NO_ERROR)
@@ -601,17 +669,17 @@ long DoRunPump(void)
       EN_A = LOW;
     }
 
+//  if(inverter.Inverter_Temp > INVERTER_TEMPERATURE_WARN )//|| inverter.Motor_Temp > MOTOR_TEMPERATURE_WARN)
+//    {
+//      EN_B = HIGH;
+//    }
+//
+//  if (inverter.Inverter_Temp <= INVERTER_TEMPERATURE_MIN)// && inverter.Motor_Temp <= MOTOR_TEMPERATURE_MIN)
+//    {
+//      EN_B = LOW;
+//    }
 
-  if(inverter.Inverter_Temp > INVERTER_TEMPERATURE_WARN || inverter.Motor_Temp > MOTOR_TEMPERATURE_WARN)
-    {
-      EN_A = HIGH;
-    }
-
-  if (inverter.Inverter_Temp <= INVERTER_TEMPERATURE_MIN && inverter.Motor_Temp <= MOTOR_TEMPERATURE_MIN)
-    {
-      EN_A = LOW;
-    }
-
+  EN_B = LOW;
 
   return error;
 }
