@@ -95,16 +95,20 @@ void DoMainError(void);
 void DoPumpError(void);
 void DoRevHeaterError(void);
 long checkCan(void);
+long isCanOffline(void);
 void enableInterrupts(void);
 void disableInterrupts(void);
 int isInvertorReady(void);
+Gear getCurrentGear(void);
+uint8_t isRegainActive();
 
 //-----------------------------------------------------------------------------
 // Defines
 //-----------------------------------------------------------------------------
-BoardType Board = MAIN; //MAIN, VACUUM_WATER_PUMP, REVERSE_HEATER
+BoardType Board = VACUUM_WATER_PUMP; //MAIN, VACUUM_WATER_PUMP, REVERSE_HEATER
+uint8_t DEGUG = 0;
 StateMachine CURRENT_STATE = ERROR;
-
+Gear CURRENT_GEAR = NEUTRAL;
 
 //-----------------------------------------------------------------------------
 // SiLabs_Startup() Routine
@@ -172,7 +176,9 @@ SI_SBIT(C2D, SFR_P2, 1);
 void main (void)
 {
    long error;
+   int waitForBreak = 1;
    int test1, test2, test3;
+
    uint8_t SFRPAGE_save = SFRPAGE;
 
    error = NO_ERROR;
@@ -206,26 +212,11 @@ void main (void)
 
    Wait_5ms((U16) 10);
 
-   //WAIT UNTIL INVERTOR IS ONLINE
-   while(CURRENT_STATE == INIT)
+   while(isCanOffline() != 0 || isCharging())  //Wait untill all CAN are online
      {
-       if(EIE2 & 0x02 )
-         {
-           C_Port = LOW;
-         }
-       else
-         {
-           EIE2 |= 0x02;                      // enable CAN interrupt
-           C_Port = HIGH;
-           Wait_5ms((U16) 20);
-           C_Port = LOW;
-         }
-
-       if(isInvertorReady())   // 0    1         2         3         4
-         {                           // Ready Blocking  Stopping  Limiting  Warning
-           CURRENT_STATE = STARTUP;
-         }
+       test1 = 0;
        Wait_5ms((U16) 10);
+     };
 
 //       checkCan();
      }
@@ -255,7 +246,13 @@ void main (void)
    {
      // todo error: DoStartup failed, what now?
    }
+   if(Board == MAIN)  //wait for break press of driver
+     {
+       while(B_PORT != HIGH)
+         {}
+     }
 
+   CURRENT_GEAR = getCurrentGear();
 
 */
    CURRENT_STATE = RUN;
@@ -313,6 +310,37 @@ void main (void)
 //         //todo error: define error handling
 //       }
 
+       if(isCharging())
+       {
+           EN_B=LOW;
+           EN_A=LOW;
+           C_Port = HIGH;
+           Wait_5ms((U16) 10);
+           C_Port = LOW;
+           Wait_5ms((U16) 10);
+       }
+       else if(((isCanOffline() == 0) && isInvertorReady()) || DEGUG)
+       {
+         C_Port = LOW;  //ENABLE LED
+         switch(Board)
+         {
+           case(MAIN):
+               error = DoRunMain();
+               break;
+           case(VACUUM_WATER_PUMP):
+               error = DoRunPump();
+               break;
+           case(REVERSE_HEATER):
+                error = DoRunRevHeater();
+               break;
+         }
+       }
+       else
+       {
+         EN_A = LOW;
+         EN_B = LOW;
+         C_Port = HIGH;  //DISABLE LED
+       }
    }                                   // end of while(1) todo: will run out if error state is reached -> define proceeding (cycle ignition?)
    C_Port = HIGH;
    Wait_5ms((U16) 100);
@@ -452,6 +480,7 @@ long DoMainStartup(void)
 
   /*
   struct BenderIMC bender;
+  Gear tempGear = getCurrentGear();
 
   //Check battery dynamic battery
   if(NumOfBat == 0)
@@ -481,6 +510,8 @@ long DoMainStartup(void)
   EN_B = HIGH;  //enable Interlock Relais (close interlock loop)
 
   if(Invertor.SystemFlags.isTractionEnabled != 1)
+  //DISABLE INVERTOR IF MOTOR DIRECTION (GEAR) WAS CHANGED
+  if(CURRENT_GEAR != tempGear)
     {
       EN_B = LOW;
       return 99901;
@@ -522,10 +553,26 @@ long DoPumpStartup(void)
       {
         error = BOARD_VACUUM_SYSTEM_ERROR;  // pump is running, but vacuum is not building up
       }
+      C_Port = HIGH;  //DISABLE LED
+      if(tempGear == NEUTRAL)
+        {
+          CURRENT_GEAR = tempGear;
+          EN_B = HIGH;
+          C_Port = LOW;  //ENABLE LED
+        }
+      else if(B_PORT == HIGH)  //Enable Invertor if Break is pressed (after gear change)
+        {
+          CURRENT_GEAR = tempGear;
+          EN_B = HIGH;
+          C_Port = LOW;  //ENABLE LED
+        }
+      else
+        {
+          return 0;
+        }
     }
 
-  //disable Vacuum Pump
-  EN_A = LOW;
+  EN_B = HIGH;
 
 //  Wait_5ms((U16) 50);
 //
@@ -593,13 +640,16 @@ long DoRunMain(void)
       error += ERROR_LEVEL_FATAL + BOARD_MAIN_CONTROLLER + INVERTER_ERROR_FAULTLEVEL_BLOCKING;
     }
 
-  if(invertor.Inverter_Temp > INVERTER_TEMPERATURE_MAX)
+  if(A_PORT == LOW ) //DC-DC FAILURE
     {
-      error += INVERTER_ERROR_TEMPERATURE;
-    }
-  if(invertor.Motor_Temp > MOTOR_TEMPERATURE_MAX)
-    {
-      error += INVERTER_ERROR_TEMPERATURE;
+    Wait_5ms((U16) 10); //give the relays some time to switch
+    if(A_PORT == LOW)
+      {
+//        EN_B = LOW;
+        EN_A = LOW;
+        C_Port = HIGH;
+        return 1;
+      }
     }
   //todo what more to check?
 
@@ -648,16 +698,9 @@ long DoRunPump(void)
 {
   long error = NO_ERROR;
   int vacuumLevel;
-  struct Invertor inverter;
+  struct Invertor inv = {0};
 
-  UpdateInvertorReadings(&inverter);
   error += getPressureReading_mbar(&vacuumLevel);
-
-  if(error != NO_ERROR)
-    {
-      //todo error: refine error handling (maybe pump should turn on)
-      return error;
-    }
 
   if(vacuumLevel > VACUUM_MAX)
     {
@@ -669,17 +712,17 @@ long DoRunPump(void)
       EN_A = LOW;
     }
 
-//  if(inverter.Inverter_Temp > INVERTER_TEMPERATURE_WARN )//|| inverter.Motor_Temp > MOTOR_TEMPERATURE_WARN)
-//    {
-//      EN_B = HIGH;
-//    }
-//
-//  if (inverter.Inverter_Temp <= INVERTER_TEMPERATURE_MIN)// && inverter.Motor_Temp <= MOTOR_TEMPERATURE_MIN)
-//    {
-//      EN_B = LOW;
-//    }
+  UpdateInvertorReadings(&inv);
 
-  EN_B = LOW;
+  if(inv.Inverter_Temp > INVERTER_TEMPERATURE_WARN )
+    {
+      EN_B = HIGH;
+    }
+
+  if (inv.Inverter_Temp <= INVERTER_TEMPERATURE_MIN)
+    {
+      EN_B = LOW;
+    }
 
   return error;
 }
@@ -702,7 +745,7 @@ long DoRunRevHeater(void)
   // check melting fuse
   if(B_PORT == HIGH)
     {
-      error = HEATER_FUSE_ERROR;
+//      error = HEATER_FUSE_ERROR;
       EN_A = LOW;
     }
   else
@@ -810,26 +853,40 @@ long getPressureReading_mbar(int *value)
   return error;
 }
 
-long checkCan()
+long isCanOffline()
 {
-//  struct BenderIMC bender;
+  struct BenderIMC bender = {0};
+  struct Invertor invertor = {0};
+  struct Battery bat1 = {0};
+  struct Battery bat2 = {0};
+  struct Battery bat3 = {0};
+  uint8_t error = 0;
 
-//  struct Battery bat1, bat2, bat3;
-//
-//  UpdateBatteryReadings(&bat1, 1);
-//  UpdateBatteryReadings(&bat2, 2);
-//  UpdateBatteryReadings(&bat3, 3);
+  UpdateBatteryReadings(&bat1, 1);
+  UpdateBatteryReadings(&bat2, 2);
+  UpdateBatteryReadings(&bat3, 3);
 
-//  UpdateBenderImcReadings(&bender);
-
-  if (NumOfBat == 0)
+  if((bat1.Status.NodeActive + bat2.Status.NodeActive + bat3.Status.NodeActive) != NumOfBat)
     {
-      return ERROR_LEVEL_FATAL + CAN_NOT_AVALIABLE; //todo can be checked a better way
+      error = 1;
+      //todo error, not all batterys are online
     }
-  else
+
+  UpdateInvertorReadings(&invertor);
+
+  if(invertor.SystemFlags.isPoweringEnabled <=0)
     {
-      return NO_ERROR;
+      error += 20;
+      //todo error, Invertor is not online
     }
+    UpdateBenderImcReadings(&bender);
+
+//    if(bender.VifcStatus.ImcAliveStaterecognition == 0)
+//    {
+//      error += 30;
+//    }
+
+    return error;
 }
 
 void enableInterrupts()
@@ -856,10 +913,11 @@ void disableInterrupts()
 
 int isInvertorReady(void)
 {
-  struct Invertor inv;
+  struct Invertor inv = {0};
   UpdateInvertorReadings(&inv);
 
-  if(inv.FaultLevel == 0)
+  if(inv.FaultLevel == 0 || inv.FaultLevel == 3 || inv.FaultLevel == 4)
+    // 0=Ready, 1=Blocking, 2=Stopping, 3=Limiting, 4=Warning
       {
         return 1;
       }
@@ -867,6 +925,37 @@ int isInvertorReady(void)
       {
         return 0;
       }
+}
+
+Gear getCurrentGear(void)
+{
+  struct Invertor inv = {0};
+  UpdateInvertorReadings(&inv);
+
+  if(inv.SystemFlags.isForwardActive)
+    {
+      return FORWARD;
+    }
+  if(inv.SystemFlags.isReverseActive)
+    {
+      return REVERSE;
+    }
+  return NEUTRAL;
+}
+
+uint8_t isRegainActive()
+{
+  struct Invertor inv = {0};
+  int test;
+  UpdateInvertorReadings(&inv);
+
+  test = inv.DC_Bus_Current.s16;
+
+  if(test<0)
+    {
+      return 1;
+    }
+  return 0;
 }
 // Initialization Subroutines
 //-----------------------------------------------------------------------------
