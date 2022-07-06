@@ -60,6 +60,8 @@ typedef enum
    JTAG_IWRITE_TIMEOUT,                // 35
    JTAG_WRITE_COMMAND_TIMEOUT,         // 36
    JTAG_READ_COMMAND_TIMEOUT,          // 37
+
+   /*
    //CAN-ALL errors
    // Xxxxxx Error Level 1-8: Level->decide reaction, 9: all Stop
    // xXxxxx Board, 1: Main Controller,  2: Pumps, 3: RevHeater
@@ -154,6 +156,7 @@ typedef enum
 
    //CAN error
    CAN_NOT_AVALIABLE = BOARD_TYPE_GEN + TYPE_CAN + 1,
+   */
 }ERROR_RECORD;
 
 //typedef struct

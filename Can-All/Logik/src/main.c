@@ -78,29 +78,18 @@
 long doInit(void);
 void highSide_Init(void);
 long checkBoard(void);
-long getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Switch_B);
-int getHighSideSwitchACurrent_mA(void);
-int getHighSideSwitchBCurrent_mA(void);
-void SetHSSDiagnostics(void);
-long DoMainStartup(void);
-long DoPumpStartup(void);
-long DoRevHeatStartup(void);
 long DoRunMain(void);
 long DoRunPump(void);
 long DoRunRevHeater(void);
 uint16_t getAdcReading_single(uint8_t pin);
-long getAdcReading_HighRes(int pin, float *adc_value);
 long getPressureReading_mbar(int *value);
-void DoMainError(void);
-void DoPumpError(void);
-void DoRevHeaterError(void);
-long checkCan(void);
 long isCanOffline(void);
 void enableInterrupts(void);
 void disableInterrupts(void);
 int isInvertorReady(void);
 Gear getCurrentGear(void);
 uint8_t isRegainActive();
+
 
 //-----------------------------------------------------------------------------
 // Defines
@@ -147,28 +136,6 @@ SI_SBIT(A_PORT, SFR_P1, 7);
 SI_SBIT(B_PORT, SFR_P2, 0);
 SI_SBIT(C2D, SFR_P2, 1);
 
-//leads to problems with generic code (highsideSwitch init etc (works with EN_*)
-//#ifndef Board == MAIN
-//SI_SBIT(BenderError, SFR_P1, 7);  //A_Port
-//SI_SBIT(InterlockSig, SFR_P0, 0); //B_Port
-//SI_SBIT(OilPressureWarningLight, SFR_P1, 2);  //EN_A
-//SI_SBIT(InterlockRelais, SFR_P1, 3);  //EN_B
-//#endif
-//
-//#ifndef Board == VACUUM_WATER_PUMP
-//SI_SBIT(Vacum_ADC, SFR_P1, 7);  //A_Port
-//SI_SBIT(VacuumPump, SFR_P1, 2); //EN_A
-//SI_SBIT(WatherPump, SFR_P1, 3); //EN_B
-//#endif
-//
-//#ifndef Board == REVERSE_HEATER
-//SI_SBIT(Rev_GearSelected, SFR_P1, 7);  //A_Port (Gearbox Sensor)
-//SI_SBIT(HeaterMeltFuse, SFR_P2, 0); //B_Port (RevDirSelected)
-//SI_SBIT(Rev_DirectionSelected, SFR_P0, 0); //C_Port
-//SI_SBIT(HeaterRelais, SFR_P1, 2); //EN_A
-//SI_SBIT(ReverseLight, SFR_P1, 3); //EN_B
-//#endif
-
 //-----------------------------------------------------------------------------
 // main() Routine
 //-----------------------------------------------------------------------------
@@ -196,21 +163,9 @@ void main (void)
    IE_EA = 1;                         // enable global interrupts
 
    SFRPAGE = SFRPAGE_save;
-
-//   Wait_5ms((U16) 5);
-//   enableInterrupts();
-   error += checkBoard();
-//   Wait_5ms((U16) 5);
-   error += checkCan();
    C_Port = HIGH;
 
-   /*
-   if(error > 0)
-   {
-     // todo error: init failed, what now?
-   }
-
-   Wait_5ms((U16) 10);
+   error += checkBoard();
 
    while(isCanOffline() != 0 || isCharging())  //Wait untill all CAN are online
      {
@@ -218,34 +173,7 @@ void main (void)
        Wait_5ms((U16) 10);
      };
 
-//       checkCan();
-     }
 
-//   checkCan();
-
-   SEND_HEARTBEAT = 0;
-/*
-   switch(Board)
-   {
-     case(MAIN):
-            error += DoMainStartup();
-         break;
-     case(VACUUM_WATER_PUMP):
-            error += DoPumpStartup();
-         break;
-     case(REVERSE_HEATER):
-            error += DoRevHeatStartup();
-         break;
-     default:
-       error = ERROR_LEVEL_FATAL;
-       break;
-   }
-//   checkCan();
-
-   if(error > 0)
-   {
-     // todo error: DoStartup failed, what now?
-   }
    if(Board == MAIN)  //wait for break press of driver
      {
        while(B_PORT != HIGH)
@@ -254,62 +182,11 @@ void main (void)
 
    CURRENT_GEAR = getCurrentGear();
 
-*/
    CURRENT_STATE = RUN;
    while (CURRENT_STATE == RUN)
    {
-       C_Port = LOW;  //ENABLE LED
-
        error=0;
-       test1 = 0;
-       test2 = 0;
-//       checkCan();
-     switch(Board)
-     {
-       case(MAIN):
-               if(isInvertorReady())
-                 {
-                   error = DoRunMain();
-                 }
-//             error = DoRunMain();
-//              test1 = DoRunMain();
-//              test2 = isInvertorReady();
-//             if((test1 + test2)>0)
-//               {
-//                 CURRENT_STATE = ERROR;
-//               }
-           break;
-       case(VACUUM_WATER_PUMP):
-               if(isInvertorReady())
-                 {
-                   error = DoRunPump();
-                 }
-           break;
-       case(REVERSE_HEATER):
-            error = DoRunRevHeater();
-           break;
-     }
-//     if(error < ERROR_LEVEL_FATAL)
-//     {
-//       switch(Board)
-//       {
-//         case(MAIN):
-//               DoMainError();
-//             break;
-//         case(VACUUM_WATER_PUMP):
-//              DoPumpError();
-//             break;
-//         case(REVERSE_HEATER):
-//              DoRevHeaterError();
-//             break;
-//       }
-//       CURRENT_STATE = ERROR;
-//     }
-//     else if (error>0)
-//       {
-//         //todo error: define error handling
-//       }
-
+//       test1 = (((isCanOffline() == 0) && isInvertorReady()) || DEGUG);
        if(isCharging())
        {
            EN_B=LOW;
@@ -382,177 +259,29 @@ long checkBoard(void)
   EN_A = LOW;
   EN_B = LOW;
 
-  if(ST_A == LOW)
-    {
-      error = BOARD_HSS_A_ERROR;
-    }
-  else if(ST_B == LOW)
-    {
-      error = BOARD_HSS_B_ERROR;
-    }
+//  if(ST_A == LOW)
+//    {
+//      error = BOARD_HSS_A_ERROR;
+//    }
+//  else if(ST_B == LOW)
+//    {
+//      error = BOARD_HSS_B_ERROR;
+//    }
   //todo can maybe check CAN
   //todo different stuff?
 
   return error;
 }
 
-// check highside diagnostic's
-long getHighSideSwitchData(HighSideSwitchData *Switch_A, HighSideSwitchData *Switch_B)
-{
-  int adcReading;
-
-  Switch_A->current = 0;//I_Sens = 4.35 mA @ I_out = 20A; I_Sens = 1.74 mA @ I_out = 8A; I_Sens = 0.65 mA @ I_out = 3A; I_Sens = 0.217 mA @ I_out = 1A
-  Switch_A->voltage = 0;//I_Sens = 2.25 mA @ T = 150°C; I_Sens = 1.52 mA @ T = 85°C; I_Sens = 0.85 mA @ T = 25°C
-  Switch_A->temperature = 0;//I_Sens = 2.25 mA @ T = 150°C; I_Sens = 1.52 mA @ T = 85°C; I_Sens = 0.85 mA @ T = 25°C
-  Switch_B->current = 0;
-  Switch_B->voltage = 0;
-  Switch_B->temperature = 0;
-
-  DIA_EN = HIGH;
-  //Check output Current
-  SEL1 = LOW;
-  SEL2 = LOW;
-
-  if(EN_A)
-  {
-    //todo Calculate Value according to I_Sens
-      //getAdcReading()
-      Switch_A->current = (float)getAdcReading_single(P1_0)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
-  }
-  if(EN_B)
-  {
-      //todo Calculate Value according to I_Sens
-      Switch_B->current = (float)getAdcReading_single(P1_1)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
-  }
-
-  //Check output Voltage
-  SEL1 = HIGH;
-  SEL2 = HIGH;
-
-  //todo Calculate Value according to I_Sens
-  Switch_A->voltage = (float)getAdcReading_single(P1_0)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
-  Switch_B->voltage = (float)getAdcReading_single(P1_1)*HSS_VOLTAGE_FACTOR+HSS_VOLTAGE_OFFSET;
-
-  //Check Temperature
-  SEL1 = HIGH;
-  SEL2 = LOW;
-
-  //todo Calculate Value according to I_Sens
-  Switch_A->temperature = (float)getAdcReading_single(P1_0)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
-  Switch_B->temperature = (float)getAdcReading_single(P1_1)*HSS_TEMPERATURE_FACTOR+HSS_VOLTAGE_OFFSET;
-
-  return NO_ERROR;
-}
-
-int getHighSideSwitchACurrent_mA()
-{
-  int adcReading;
-  long error = NO_ERROR;
-
-  SetHSSDiagnostics();
-
-  return getAdcReading_single(P1_0)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
-}
-
-int getHighSideSwitchBCurrent_mA()
-{
-  int adcReading;
-  long error = NO_ERROR;
-
-  SetHSSDiagnostics();
-
-  return getAdcReading_single(P1_1)*HSS_CURRENT_FACTOR+HSS_CURRENT_OFFSET;
-}
-
-void SetHSSDiagnostics()
-{
-  DIA_EN = HIGH;
-  //Check output Current
-  SEL1 = LOW;
-  SEL2 = LOW;
-}
-
-//check, enable inverter, battery and bender
-long DoMainStartup(void)
+long DoRunMain(void)
 {
   long error = NO_ERROR;
-  struct Invertor Invertor;
-
-  /*
-  struct BenderIMC bender;
   Gear tempGear = getCurrentGear();
 
-  //Check battery dynamic battery
-  if(NumOfBat == 0)
-    {
-      error += BATTERY_ERROR_GENERIC;
-      return error;
-    }
-
-  //check if Bender is up and running
-  UpdateBenderImcReadings(&bender);
-
-  if((bender.VifcStatus.OverallImcSelbsttest
-      && bender.VifcStatus.ParameterImcSelbsttest
-      && bender.VifcStatus.IsolationMeasurementActivated)
-      != 1)
-      {
-        //todo error
-      }
-*/
-  //check inverter state
-  if((Invertor.SystemFlags.isPoweringReady != 1)
-      && (Invertor.FaultCode == 0)) //todo live: check flags...
-    {
-      return 99900;//todo error
-    }
-
-  EN_B = HIGH;  //enable Interlock Relais (close interlock loop)
-
-  if(Invertor.SystemFlags.isTractionEnabled != 1)
   //DISABLE INVERTOR IF MOTOR DIRECTION (GEAR) WAS CHANGED
   if(CURRENT_GEAR != tempGear)
     {
       EN_B = LOW;
-      return 99901;
-    }
-
-  return error;
-}
-
-//check inverter tempereature, check vacuum sensor
-long DoPumpStartup(void)
-{
-  long error = NO_ERROR;
-  int vacuumLevel = 0;
-  int vacuumLevel_off = 0;
-  int tempCurrent = 0;
-
-  //get Vacuum Level
-  error += getPressureReading_mbar(&vacuumLevel_off);
-
-  //enable Vacuum Pump
-  EN_A = HIGH;
-
-  Wait_5ms((U16) 20);
-
-//  if(getHighSideSwitchACurrent_mA() < 100)  //check if Pump is running
-//  {
-//    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
-//  }
-
-  error += getPressureReading_mbar(&vacuumLevel);
-
-  if(vacuumLevel+25 >= vacuumLevel_off) //check if Vacuum is building up
-  {
-    if(error == BOARD_VACUUM_PUMP_ERROR)  // pump is not running, no Vacuum is building up
-      {
-        error = BOARD_VACUUM_PUMP_ERROR;
-      }
-    else
-      {
-        error = BOARD_VACUUM_SYSTEM_ERROR;  // pump is running, but vacuum is not building up
-      }
       C_Port = HIGH;  //DISABLE LED
       if(tempGear == NEUTRAL)
         {
@@ -574,71 +303,25 @@ long DoPumpStartup(void)
 
   EN_B = HIGH;
 
-//  Wait_5ms((U16) 50);
-//
-//  if(getHighSideSwitchACurrent_mA() > 100)  //check if Pump is OFF
-//  {
-//    error = BOARD_VACUUM_PUMP_ERROR; //pump should be running, seams not ON
-//  }
-//
-//  //check wather pump as well
-//  tempCurrent= getHighSideSwitchBCurrent_mA();
-//
-//  EN_B = HIGH;
-//  Wait_5ms((U16)10);
-//  if(getHighSideSwitchBCurrent_mA() <= (tempCurrent+100)) //Water pump is running now, so it should drain at least 100mA more than bevore
+  //enable break light if regain is happening
+//  if(isRegainActive())
 //    {
-//      //todo error, water pump not running
+//      EN_A = HIGH;
 //    }
-//
-//  if(error == NO_ERROR) //Board seams OK, signal accordingly
-//  {
-////    B_PORT = HIGH;
-//  }
-
-  EN_A=LOW;
-  EN_B=LOW;
-
-  return error;
-}
-
-//check heater melting fuse
-long DoRevHeatStartup(void)
-{
-  long error = NO_ERROR;
-
-  //todo ben: set internal PullUp of B_Port (P2.0)
-
-  if(B_PORT == HIGH)  //check Heater Melting Fuse
-    {
-      error = HEATER_FUSE_ERROR;
-    }
-
-  return error;
-}
-
-long DoRunMain(void)
-{
-  long error = NO_ERROR;
-//  struct Invertor invertor;
-//  struct Battery bat1, bat2, bat3;
-//  struct BenderIMC bender;
-
-  EN_B = HIGH;
-//  error = isInvertorReady();
-//  if(A_PORT == LOW ) //DC-DC FAILURE
+//  else
 //    {
-//      EN_B = LOW;
-//      return 1;
+//      EN_A = LOW;
 //    }
-  /*
-  //check inverter
-  UpdateInvertorReadings(&invertor);
+//        EN_A = LOW;
+//  if(B_PORT == HIGH)
+//    {
+//      EN_A = HIGH;
+//    }
+//  else
+//    {
+//      EN_A = LOW;
+//    }
 
-  if(invertor.FaultLevel.Blocking)
-    {
-      error += ERROR_LEVEL_FATAL + BOARD_MAIN_CONTROLLER + INVERTER_ERROR_FAULTLEVEL_BLOCKING;
-    }
 
   if(A_PORT == LOW ) //DC-DC FAILURE
     {
@@ -651,8 +334,8 @@ long DoRunMain(void)
         return 1;
       }
     }
-  //todo what more to check?
 
+  /*
   //check battery state
   UpdateBatteryReadings(&bat1, 1);
   UpdateBatteryReadings(&bat2, 2);
@@ -730,6 +413,13 @@ long DoRunPump(void)
 long DoRunRevHeater(void)
 {
   long error = NO_ERROR;
+  uint8_t rev, aport, con1, con2;
+
+  rev = isRevSelected();
+  aport = A_PORT;
+
+  con1 = rev && (A_PORT == LOW);
+  con2 = (rev == LOW) && aport;
 
   //do reverse light logic
   if((isRevSelected() && (A_PORT == LOW))
@@ -756,16 +446,6 @@ long DoRunRevHeater(void)
   return error;
 }
 
-void DoMainError(void)
-{
-  //todo CAN: shutdown battery's
-  }
-void DoPumpError(void)
-{
-  }
-void DoRevHeaterError(void)
-{
-  }
 uint16_t getAdcReading_single(uint8_t pin)
 {
   uint16_t currval;                        // Current value of ADC0
@@ -788,55 +468,6 @@ uint16_t getAdcReading_single(uint8_t pin)
   return (uint16_t)((double)(currval*ADC_TO_MV));
 }
 
-
-long getAdcReading_HighRes(int pin, float *value) //todo: make work
-{
-  int adcReading = 0;
-
-  //---------------------------
-  uint16_t i;                              // Sample counter
-  uint32_t accumulator = 0L;               // Where the ADC samples are integrated
-  uint16_t currval;                        // Current value of ADC0
-
-  uint8_t SFRPAGE_save = SFRPAGE;
-  SFRPAGE = LEGACY_PAGE;
-
-  ADC0MX = pin;
-
-  ADC0CN_ADINT = 0;                         // Clear end-of-conversion indicator
-  ADC0CN_ADBUSY = 1;                        // Initiate conversion
-
-  // Accumulate 4096 samples and average to get a 16-bit result
-  // 4096 samples = 12 bits; 12 extra bits + 12 samples per bit = 24 bits
-  // Shift by 8 bits to calculate a 16-bit result.
-
-  i = 0;
-  do
-  {
-     while (!ADC0CN_ADINT);                 // Wait for conversion to complete
-     ADC0CN_ADINT = 0;                      // Clear end-of-conversion indicator
-
-     currval = ADC0;                  // Store latest ADC conversion
-     ADC0CN_ADBUSY = 1;                     // Initiate conversion
-     accumulator += currval;          // Accumulate
-     i++;                             // Update counter
-  } while (i != 4096);
-
-  accumulator = accumulator >> 8;     // 8-bit shift to go from 24 to 16 bits
-
-  *value = (uint16_t) (((double) accumulator * (double) VREF) / (double) 65536);
-
-  // Note that the numbers were rounded when equation was solved.
-  // This rounding does introduce error to the calculation, but it is
-  // negligible when looking for an estimated temperature.
-
-  SFRPAGE = SFRPAGE_save;
-
-  return NO_ERROR;
-
-}
-//-----------------------------------------------------------------------------
-
 // calculate and return the pressure measured by the pressure sensor
 long getPressureReading_mbar(int *value)
 {
@@ -844,10 +475,6 @@ long getPressureReading_mbar(int *value)
  double vac = 0;
   //Vacuum Sensor 0kPa @ 0.5V, -100kPa @ 4.5V
   //calculate pressure [mBar], based on 101kPa (athmosperic pressure @ 0müm)
-//  *value = 101 - (int)(vacuumSensorReading*VacuumFactor+VacuumOffset);
-// vac=getAdcReading_single(P1_7);
-// vac=(vac+VACUUM_OFFSET)*VACUUM_FACTOR;
-// *value=(int)vac;
  *value = (int)(1100+((getAdcReading_single(P1_7)+VACUUM_OFFSET)*VACUUM_FACTOR));
 
   return error;
