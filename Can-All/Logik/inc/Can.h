@@ -71,6 +71,7 @@
 #define CAN_ID_IMD_REQUEST  (0x022) // CAN-ID of Isolation Monitor Request
 #define CAN_ID_IMD_RESPONSE (0x023) // CAN-ID of Isolation Monitor Response
 #define CAN_ID_IMD_INFO     (0x037) // CAN-ID of Isolation Monitor Info-Messag
+#define CAN_ID_CHARGER      (0x010) // CAN-ID of Charger (default ID:4*4=16(0x10))
 
 #define TPDO1_INV     0x200 // Frame 1 of Invertor
 #define TPDO2_INV     0x201 // Frame 2 of Invertor
@@ -80,6 +81,13 @@
 #define TPDO3_BMS     0x3E0 // Frame 3 of Battery x BMS
 #define TPDO4_BMS     0x4E0 // Frame 4 of Battery x BMS
 #define RPDO1_BMS     0x200 // Frame 5 of Battery x BMS
+
+
+#define TPDO1_CHARGER_BMS 0x180 // 0x180+node_id (answer message; from charger to BMS)
+#define TPDO1_CHARGER 0x280 // 0x280+node_id (period: 4,000S)
+#define TPDO2_CHARGER 0x380 // 0x380+node_id (period: 1,000S)
+#define TPDO1_BMS_TO_CHARGER 0x69D // 0x6C1 (broadcast message; from BMS to charger) Timeout: 4s
+#define TPDO2_BMS_TO_CHARGER 0x776 // (broadcast; from BMS to chargers)
 
 //-----------------------------------------------------------------------------
 // CAN OBJECTS
@@ -115,12 +123,12 @@
 #define GET_BAT3_CURRENT  (23)  // Message Object to TPDO3 of BMS from BAT3
 #define GET_BAT4_CURRENT  (24)  // Message Object to TPDO3 of BMS from BAT4
 
-#define XET_DUMMY_25  (25)  // Message Object to
-#define XET_DUMMY_26  (26)  // Message Object to
-#define XET_DUMMY_27  (27)  // Message Object to
-#define XET_DUMMY_28  (28)  // Message Object to
+#define GET_CHARGER_BMS  (25)  // Message Object to
+#define GET_CHARGER_1  (26)  // Message Object to
+#define GET_CHARGER_2  (27)  // Message Object to
+#define GET_BMS_TO_CHARGER_1  (28)  // Message Object to
 
-#define XET_DUMMY_29  (29)  // Message Object to
+#define GET_BMS_TO_CHARGER_2  (29)  // Message Object to
 #define XET_DUMMY_30  (30)  // Message Object to
 #define XET_DUMMY_32  (31)  // Message Object to
 #define GET_BROADCAST (32)  // Message Object to get all the stuff not covered by other Message objects
@@ -155,7 +163,9 @@ extern void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr);
 extern void UpdateInvertorReadings(struct Invertor *Invertor);
 extern void UpdateBenderImcReadings(struct BenderIMC *Bender);
 extern uint8_t isRevSelected();
-
+//extern void GetChargerFrame1(uint64_t *frame);
+//extern void GetChargerFrame2(uint64_t *frame);
+extern int isCharging();
 
 static const uint16_t MessageBoxCanId[MESSAGE_OBJECTS] = // List of all CAN IDs associated to the CAN-objects
 {
@@ -163,7 +173,7 @@ static const uint16_t MessageBoxCanId[MESSAGE_OBJECTS] = // List of all CAN IDs 
     RPDO1_BMS + CAN_ID_BAT1, RPDO1_BMS + CAN_ID_BAT2, RPDO1_BMS + CAN_ID_BAT3, RPDO1_BMS + CAN_ID_BAT4, TPDO1_BMS + CAN_ID_BAT1, TPDO1_BMS + CAN_ID_BAT2, TPDO1_BMS + CAN_ID_BAT3, TPDO1_BMS + CAN_ID_BAT4,  //line 1-8
     CAN_ID_BROADCAST, CAN_ID_HEARTBEAT + CAN_ALL_ID, CAN_ALL_ID, CAN_ALL_ID, 0x013, 0x014, 0x015, 0x016,  //line 9-16
     (CAN_ID_INVERTER + TPDO1_INV), (CAN_ID_INVERTER + TPDO2_INV),  (CAN_ID_IMD_INFO), 0x020, 0x021, 0x022, 0x023, 0x024,  //line 17-24
-    0x025, 0x026, 0x027, 0x028, 0x029, 0x030, 0x031, CAN_ID_BROADCAST,  //line 25-32
+    (CAN_ID_CHARGER + TPDO1_CHARGER_BMS), (CAN_ID_CHARGER + TPDO1_CHARGER), (CAN_ID_CHARGER + TPDO2_CHARGER), (TPDO1_BMS_TO_CHARGER), (TPDO2_BMS_TO_CHARGER), 0x030, 0x031, CAN_ID_BROADCAST,  //line 25-32
 };
 
 //Make shure CanAll does not send any thing over can -> only *RX directions
@@ -193,7 +203,7 @@ static const uint8_t MessageBoxSize[MESSAGE_OBJECTS] = // List of all size  of a
     8, 8, 8, 8, 8, 8, 8, 8,   //line 1-8
     2, 1, 1, 2, 0, 0, 0, 0,   //line 9-16
     8, 8, 8, 0, 0, 0, 0, 0,   //line 17-24
-    0, 0, 0, 0, 0, 0, 0, 8,   //line 25-32
+    8, 8, 8, 8, 8, 0, 0, 8,   //line 25-32
 };
 
 static const uint8_t MessageBoxInUse[MESSAGE_OBJECTS] = // List of all active CAN-objects
@@ -202,7 +212,7 @@ static const uint8_t MessageBoxInUse[MESSAGE_OBJECTS] = // List of all active CA
     1, 1, 1, 1, 1, 1, 1, 1,   //line 1-8
     1, 1, 1, 1, 0, 0, 0, 0,   //line 9-16
     1, 1, 1, 0, 0, 0, 0, 0,   //line 17-24
-    0, 0, 0, 0, 0, 0, 0, 1,   //line 25-32
+    1, 1, 1, 1, 1, 0, 0, 1,   //line 25-32
 };
 
 #endif /* INC_CAN_H_ */
