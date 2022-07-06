@@ -30,6 +30,7 @@ void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr);
 void UpdateInvertorReadings(struct Invertor *Invertor);
 void UpdateBenderImcReadings(struct BenderIMC *Bender);
 uint8_t isRevSelected();
+int isCharging();
 
 
 SI_INTERRUPT_PROTO(CAN0_ISR, INTERRUPT_CAN0);
@@ -290,6 +291,7 @@ int16_t CANgetMessageInt(uint8_t objNum, uint8_t startIndex)
 {
   SI_UU64_t payload;
   SI_UU16_t result;
+  uint8_t test1=0, test2=0;
   uint8_t intStatSave = IE_EA;         // Preserve state of global Interrupts
 
   IE_EA = 0;                            // Disable global interrupts
@@ -310,15 +312,17 @@ void GetSoCAverage(uint16_t *SoCavg)
 //todo check if correct
 uint8_t isRevSelected()
 {
-  return (CANgetMessageInt(GET_INV_STATE1, 6) & 0x0004);
+  uint8_t revSelected = CANgetMessageInt(GET_INV_STATE1, 6) & 0x0004;
+  return revSelected;
 }
 
 void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr)
 {
-  SI_UU64_t payload;
-  uint16_t BatStatus;
-  uint8_t state;
-  uint8_t objNum_status, objNum_Current;
+  SI_UU64_t payload = {0};
+  SI_UU64_t payload_test = {0};
+  uint16_t BatStatus = 0;
+  uint8_t state = 0;
+  uint8_t objNum_status = 0, objNum_Current = 0;
 
   switch(BatNr)
   {
@@ -356,20 +360,10 @@ void UpdateBatteryReadings(struct Battery *Bat, uint8_t BatNr)
   Bat->Status.InternHeating = (BatStatus & 0x0100);
   Bat->Status.ExternHeating = (BatStatus & 0x0200);
 
-  payload = CANgetMessageObjPayload(objNum_Current);
-  state = payload.u8[7];
+  payload.u16[0] = CANgetMessageInt(objNum_status, 2);
+  Bat->State = payload.u8[1];
 
-  Bat->State.Start = (state & 0x0001);
-  Bat->State.Idle = (state & 0x0002);
-  Bat->State.Balancing = (state & 0x0004);
-  Bat->State.Drive = (state & 0x0008);
-  Bat->State.Charge = (state & 0x0010);
-  Bat->State.BalancerSaveAndOff = (state & 0x0020);
-  Bat->State.BalancerOffDelay = (state & 0x0040);
-  Bat->State.Error = (state & 0x0080);
-  Bat->State.Boot = (state & 0x0100);
-
-  Bat->ErrorWarningNr = payload.u8[3];
+  Bat->ErrorWarningNr = payload.u8[0];
   Bat->SoC = CANgetMessageInt(objNum_status, 4);
   Bat->SoH = CANgetMessageInt(objNum_status, 6);
   Bat->Current = CANgetMessageInt(objNum_Current, 2);
@@ -421,7 +415,7 @@ void UpdateInvertorReadings(struct Invertor *Invertor)
 
   //todo: faultLevel is a int, not bool
   Invertor->FaultLevel = TempPayload.u8[5];
-  /*
+  /*s
   Invertor->FaultLevel.Ready = (TempPayload.u8[5] & 0x01);
   Invertor->FaultLevel.Blocking = (TempPayload.u8[5] & 0x02);
   Invertor->FaultLevel.Stopping = (TempPayload.u8[5] & 0x04);
@@ -457,6 +451,27 @@ void UpdateBenderImcReadings(struct BenderIMC *Bender)
 
 }
 
+
+int isCharging()
+{
+
+  struct Battery bat1 = {0};
+  struct Battery bat2 = {0};
+  struct Battery bat3 = {0};
+
+  UpdateBatteryReadings(&bat1, 1);
+  UpdateBatteryReadings(&bat2, 2);
+  UpdateBatteryReadings(&bat3, 3);
+
+  if(bat1.State == Charge || bat2.State == Charge || bat3.State == Charge ||
+      bat1.State == ChargeConversation || bat2.State == ChargeConversation || bat3.State == ChargeConversation)
+    {
+      return 1;
+    }
+  return 0;
+
+
+}
 //-----------------------------------------------------------------------------
 // Interrupt Service Routines
 //-----------------------------------------------------------------------------

@@ -28,17 +28,18 @@ struct Battery_Status{
   uint8_t ExternHeating;
 };
 
-struct Battery_State{
-  uint8_t Start;
-  uint8_t Idle;
-  uint8_t Balancing;
-  uint8_t Drive;
-  uint8_t Charge;
-  uint8_t BalancerSaveAndOff;
-  uint8_t BalancerOffDelay;
-  uint8_t BalancerOff;
-  uint8_t Error;
-  uint8_t Boot;
+enum Battery_State{
+  Start = 0,
+  Idle = 1,
+  Balancing = 2,
+  Drive = 3,
+  Charge = 4,
+  ChargeConversation = 5,
+  BalancerSaveAndOff = 20,
+  BalancerOffDelay = 21,
+  BalancerOff = 22,
+  Error = 99,
+  Boot = 199,
 };
 
 
@@ -46,7 +47,7 @@ struct Battery{
   struct  Battery_Status Status; //BIT0        BIT1  BIT2          BIT3            BIT4              BIT5          BIT6    BIT7      BIT8            BIT9            BIT10÷BIT15
                                 //NODE AKTIV  ERROR VALID VALUES  PRECHARGE OK    HV RELAIS ENABLE  MASTER ACTIVE WARNING BALANCING INTERN HEATING  EXTERN HEATING
 
-  struct Battery_State State;    //0       1       2           3       4         5                     20                      21                    22              99      199
+  uint8_t State;    //0       1       2           3       4         5                     20                      21                    22              99      199
                                 //START   IDLE    BALANCING   DRIVE   CHARGE    CHARGE_CONSERVATION   BALANCER SAVE AND OFF   BALANCER OFF DELAY    BALANCER OFF    ERROR   BOOT
   uint16_t ErrorWarningNr;
   uint16_t SoC;
@@ -99,7 +100,7 @@ struct Invertor{
                                       // isSoCLowForTraction  isSoCLowForHydraulic  isReverseActive isForwardActive isParkBrakeActive isPedalBrakeActive  isControllerInOvertemperature isKeySwitchOvervoltage  isKeySwitchUndervoltage isVehicleRunning_NotStill isTractionEnabled isHydraulicEnabled  isPoweringEnabled isPoweringReady Reserved
   uint8_t FaultCode;      // See manual
   uint8_t FaultLevel;      // 0    1         2         3         4
-                                    // Ready Blocking  Stopping  Limiting  Warning
+                           // Ready Blocking  Stopping  Limiting  Warning
 
   SI_UU16_t DC_Bus_Current; // [dA] (1dA=0.1A)
 };

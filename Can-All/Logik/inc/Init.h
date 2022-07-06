@@ -52,6 +52,13 @@ typedef enum
 
 }StateMachine;
 
+typedef enum
+{
+  FORWARD,
+  NEUTRAL,
+  REVERSE,
+}Gear;
+
 //Can Nodes
 //todo figure out nodes
 typedef enum
