@@ -41,12 +41,12 @@
 //-----------------------------------------------------------------------------
 
 #define VACUUM_MIN                400.0   // [mBar] disable vacuum pump at this level todo ben: defnie more accurate
-#define VACUUM_MAX                600.0   // [mBar] enable vacuum pump at this level todo ben: defnie more accurate
+#define VACUUM_MAX                700.0   // [mBar] enable vacuum pump at this level todo ben: defnie more accurate
 #define INVERTER_TEMPERATURE_MAX  95.0    // [°C] Maximal inverter Temperature -> shut down todo ben: defnie more accurate
-#define INVERTER_TEMPERATURE_WARN 65.0    // [°C] Temperature to start cooling todo ben: defnie more accurate
-#define INVERTER_TEMPERATURE_MIN  45.0    // [°C] Temperature to stop cooling todo ben: defnie more accurate
-#define MOTOR_TEMPERATURE_MAX     95.0      // [°C] Maximal motor Temperature -> shut down todo ben: defnie more accurate
-#define MOTOR_TEMPERATURE_WARN    65.0      // [°C] Temperature to start cooling todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_WARN 60.0//65.0    // [°C] Temperature to start cooling todo ben: defnie more accurate
+#define INVERTER_TEMPERATURE_MIN  45.0//45.0    // [°C] Temperature to stop cooling todo ben: defnie more accurate
+#define MOTOR_TEMPERATURE_MAX     95.0    // [°C] Maximal motor Temperature -> shut down todo ben: defnie more accurate
+#define MOTOR_TEMPERATURE_WARN    65.0    // [°C] Temperature to start cooling todo ben: defnie more accurate
 #define MOTOR_TEMPERATURE_MIN     45.0    // [°C] Temperature to stop cooling todo ben: defnie more accurate
 #define VREF                      2200.0  // [mV] ADC Voltage Reference
 #define HSS_TEMPERATURE_FACTOR    0.012   // [°C/mV]
@@ -55,7 +55,7 @@
 #define HSS_CURRENT_OFFSET        0.0     // [mV]
 #define HSS_VOLTAGE_FACTOR        0.085   // [V/mV]
 #define HSS_VOLTAGE_OFFSET        0.0     // [mV]
-#define VACUUM_FACTOR             -0.25    // [mBar/mV]
+#define VACUUM_FACTOR             -0.25   // [mBar/mV]
 #define VACUUM_OFFSET             -500.0  // [mV] 0hpa @ 0.5V V_out
 #define ADC_TO_MV                 1.915   // [mV/DAC]
 //-----------------------------------------------------------------------------
