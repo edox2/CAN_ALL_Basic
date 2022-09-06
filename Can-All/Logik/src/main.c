@@ -94,7 +94,7 @@ uint8_t isRegainActive();
 //-----------------------------------------------------------------------------
 // Defines
 //-----------------------------------------------------------------------------
-BoardType Board = VACUUM_WATER_PUMP; //MAIN, VACUUM_WATER_PUMP, REVERSE_HEATER
+BoardType Board = MAIN; //MAIN, VACUUM_WATER_PUMP, REVERSE_HEATER
 uint8_t DEGUG = 0;
 StateMachine CURRENT_STATE = ERROR;
 Gear CURRENT_GEAR = NEUTRAL;
@@ -163,7 +163,6 @@ void main (void)
    IE_EA = 1;                         // enable global interrupts
 
    SFRPAGE = SFRPAGE_save;
-   C_Port = HIGH;
 
    error += checkBoard();
 
@@ -176,8 +175,10 @@ void main (void)
 
    if(Board == MAIN)  //wait for break press of driver
      {
-       while(B_PORT != HIGH)
-         {}
+       while(C_Port != HIGH)
+         {
+           Wait_5ms((U16) 1);
+         }
      }
 
    CURRENT_GEAR = getCurrentGear();
@@ -191,14 +192,9 @@ void main (void)
        {
            EN_B=LOW;
            EN_A=LOW;
-           C_Port = HIGH;
-           Wait_5ms((U16) 10);
-           C_Port = LOW;
-           Wait_5ms((U16) 10);
        }
        else if(((isCanOffline() == 0) && isInvertorReady()) || DEGUG)
        {
-         C_Port = LOW;  //ENABLE LED
          switch(Board)
          {
            case(MAIN):
@@ -216,10 +212,8 @@ void main (void)
        {
          EN_A = LOW;
          EN_B = LOW;
-         C_Port = HIGH;  //DISABLE LED
        }
    }                                   // end of while(1) todo: will run out if error state is reached -> define proceeding (cycle ignition?)
-   C_Port = HIGH;
    Wait_5ms((U16) 100);
    CURRENT_STATE = RUN;
 }                                      // end of main()
@@ -282,18 +276,15 @@ long DoRunMain(void)
   if(CURRENT_GEAR != tempGear)
     {
       EN_B = LOW;
-      C_Port = HIGH;  //DISABLE LED
       if(tempGear == NEUTRAL)
         {
           CURRENT_GEAR = tempGear;
           EN_B = HIGH;
-          C_Port = LOW;  //ENABLE LED
         }
-      else if(B_PORT == HIGH)  //Enable Invertor if Break is pressed (after gear change)
+      else if(C_Port == HIGH)  //Enable Invertor if Break is pressed (after gear change)
         {
           CURRENT_GEAR = tempGear;
           EN_B = HIGH;
-          C_Port = LOW;  //ENABLE LED
         }
       else
         {
@@ -330,7 +321,6 @@ long DoRunMain(void)
       {
 //        EN_B = LOW;
         EN_A = LOW;
-        C_Port = HIGH;
         return 1;
       }
     }
