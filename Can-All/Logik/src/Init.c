@@ -344,6 +344,8 @@ void CAN_Init ()
    // See the CAN Bit Timing Spreadsheet for how to calculate this value
    CAN0BT = 0x1C02;                    // Based on 24 MHz CAN clock, set the
                                        // CAN bit rate to 500kbps
+   //CAN0BT = 0x1C05;                  // Based on 24 MHz CAN clock, set the
+                                       // CAN bit rate to 250kbps
 
 
    //---------Initialize settings common to all message objects

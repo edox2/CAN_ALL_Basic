@@ -81,6 +81,7 @@ long checkBoard(void);
 long DoRunMain(void);
 long DoRunPump(void);
 long DoRunRevHeater(void);
+long DoRunDummy(void);
 uint16_t getAdcReading_single(uint8_t pin);
 long getPressureReading_mbar(int *value);
 long isCanOffline(void);
@@ -94,8 +95,8 @@ uint8_t isRegainActive();
 //-----------------------------------------------------------------------------
 // Defines
 //-----------------------------------------------------------------------------
-BoardType Board = MAIN; //MAIN, VACUUM_WATER_PUMP, REVERSE_HEATER
-uint8_t DEGUG = 0;
+BoardType Board = DUMMY; //MAIN, VACUUM_WATER_PUMP, REVERSE_HEATER, DUMMY
+uint8_t DEGUG = 1;
 StateMachine CURRENT_STATE = ERROR;
 Gear CURRENT_GEAR = NEUTRAL;
 
@@ -166,12 +167,14 @@ void main (void)
 
    error += checkBoard();
 
-   while(isCanOffline() != 0 || isCharging())  //Wait untill all CAN are online
+   if(DEBUG == 0)
      {
-       test1 = 0;
-       Wait_5ms((U16) 10);
-     };
-
+     while(isCanOffline() != 0 || isCharging())  //Wait untill all CAN are online
+       {
+         test1 = 0;
+         Wait_5ms((U16) 10);
+       };
+     }
 
    if(Board == MAIN)  //wait for break press of driver
      {
@@ -206,6 +209,8 @@ void main (void)
            case(REVERSE_HEATER):
                 error = DoRunRevHeater();
                break;
+           case(DUMMY):
+               error = DoRunDummy();
          }
        }
        else
@@ -434,6 +439,20 @@ long DoRunRevHeater(void)
     }
 
   return error;
+}
+
+long DoRunDummy()
+{
+  if(DEBUG == 1)
+    {
+      EN_A = HIGH;
+      EN_B = HIGH;
+      Wait_5ms(20);
+      EN_A = LOW;
+      EN_B = LOW;
+      Wait_5ms(20);
+    }
+  return 0;
 }
 
 uint16_t getAdcReading_single(uint8_t pin)

@@ -39,6 +39,7 @@ typedef enum
    REVERSE_HEATER,    //Heater, Reverse Light controller
                           //IN: Reverse Gear Selector (FNR), Reverse Gear Sensor (gearbox), Heater Melting Fuse (internal pull UP)
                           //OUT: Heater Relais, Reverse Light
+   DUMMY,             // for first startup does nothing
 }BoardType;
 
 //Main State Machine
